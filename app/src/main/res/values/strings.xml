@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">LetraMestre</string>
+    <string name="criar_partida">Criar Partida</string>
+    <string name="entrar_partida">Entrar em Partida</string>
+    <string name="aguardando_jogadores">Aguardando jogadores...</string>
+    <string name="iniciar_jogo">Iniciar Jogo</string>
+    <string name="confirmar_jogada">Confirmar Jogada</string>
+    <string name="passar_vez">Passar a Vez</string>
+    <string name="trocar_pecas">Trocar Peças</string>
+    <string name="seu_turno">Sua vez de jogar!</string>
+    <string name="aguarde_turno">Aguarde sua vez...</string>
+    <string name="palavra_invalida">Palavra não encontrada no dicionário</string>
+    <string name="validar_palavra">Validar Palavra</string>
+    <string name="aprovar">Aprovar</string>
+    <string name="rejeitar">Rejeitar</string>
+    <string name="jogadores_conectados">%d jogadores conectados</string>
+    <string name="pontuacao">Pontuação: %d</string>
+    <string name="fim_de_jogo">Fim de Jogo!</string>
+    <string name="vencedor">Vencedor: %s</string>
+    <string name="digite_ip">Digite o IP do anfitrião</string>
+    <string name="conectar">Conectar</string>
+    <string name="seu_ip">Seu IP: %s</string>
+    <string name="porta">Porta: %d</string>
+</resources>

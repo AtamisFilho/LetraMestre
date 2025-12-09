@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Cores principais do tema -->
+    <color name="primary">#4CAF50</color>
+    <color name="primary_dark">#388E3C</color>
+    <color name="primary_light">#C8E6C9</color>
+    <color name="accent">#FF9800</color>
+    
+    <!-- Cores do tabuleiro -->
+    <color name="board_background">#E8D4A8</color>
+    <color name="cell_normal">#F5E6C8</color>
+    <color name="cell_double_letter">#81D4FA</color>
+    <color name="cell_triple_letter">#42A5F5</color>
+    <color name="cell_double_word">#FFAB91</color>
+    <color name="cell_triple_word">#EF5350</color>
+    <color name="cell_center">#FFD54F</color>
+    
+    <!-- Cores das peças -->
+    <color name="tile_background">#F5DEB3</color>
+    <color name="tile_border">#8B4513</color>
+    <color name="tile_text">#2E1A0E</color>
+    
+    <!-- Cores de UI -->
+    <color name="background">#FAFAFA</color>
+    <color name="surface">#FFFFFF</color>
+    <color name="on_primary">#FFFFFF</color>
+    <color name="on_background">#212121</color>
+    <color name="on_surface">#212121</color>
+    <color name="error">#D32F2F</color>
+</resources>
