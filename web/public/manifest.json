@@ -1,0 +1,30 @@
+{
+  "name": "LetraMestre - Jogo de Palavras",
+  "short_name": "LetraMestre",
+  "description": "O jogo de palavras multiplayer em português brasileiro",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#4CAF50",
+  "theme_color": "#4CAF50",
+  "orientation": "portrait",
+  "scope": "/",
+  "icons": [
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["games", "entertainment"],
+  "lang": "pt-BR",
+  "dir": "ltr",
+  "screenshots": [],
+  "prefer_related_applications": false
+}

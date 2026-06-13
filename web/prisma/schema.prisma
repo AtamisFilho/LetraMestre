@@ -1,0 +1,99 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model AdminUser {
+  id        String   @id @default(cuid())
+  username  String   @unique
+  password  String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Game {
+  id            String   @id @default(cuid())
+  code          String   @unique
+  status        String   @default("waiting") // waiting, playing, finished
+  hostId        String
+  hostName      String
+  winnerId      String?
+  winnerName    String?
+  boardState    String   @default("{}") // JSON
+  tileBagState  String   @default("[]") // JSON
+  playerCount   Int      @default(0)
+  maxPlayers    Int      @default(4)
+  language      String   @default("pt-BR")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  players       Player[]
+  moves         Move[]
+  chatMessages  ChatMessage[]
+}
+
+model Player {
+  id          String   @id @default(cuid())
+  gameId      String
+  name        String
+  score       Int      @default(0)
+  rack        String   @default("[]") // JSON
+  isHost      Boolean  @default(false)
+  isConnected Boolean  @default(true)
+  joinOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  game        Game     @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  moves       Move[]
+}
+
+model Move {
+  id          String   @id @default(cuid())
+  gameId      String
+  playerId    String
+  playerName  String
+  word        String
+  score       Int
+  tiles       String   @default("[]") // JSON
+  moveType    String   @default("place") // place, pass, exchange
+  createdAt   DateTime @default(now())
+  game        Game     @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  player      Player   @relation(fields: [playerId], references: [id], onDelete: Cascade)
+}
+
+model ChatMessage {
+  id        String   @id @default(cuid())
+  gameId    String
+  playerId  String?
+  playerName String
+  message   String
+  type      String   @default("chat") // chat, system
+  createdAt DateTime @default(now())
+  game      Game     @relation(fields: [gameId], references: [id], onDelete: Cascade)
+}
+
+model ApprovedWord {
+  id        String   @id @default(cuid())
+  word      String   @unique
+  addedBy   String   @default("admin")
+  createdAt DateTime @default(now())
+}
+
+model BannedWord {
+  id        String   @id @default(cuid())
+  word      String   @unique
+  addedBy   String   @default("admin")
+  createdAt DateTime @default(now())
+}
+
+model GameStats {
+  id           String   @id @default(cuid())
+  totalGames   Int      @default(0)
+  totalMoves   Int      @default(0)
+  totalPlayers Int      @default(0)
+  avgScore     Float    @default(0)
+  updatedAt    DateTime @updatedAt
+}

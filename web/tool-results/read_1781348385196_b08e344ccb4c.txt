@@ -1,0 +1,679 @@
+     1→'use client';
+     2→
+     3→import { useGameStore } from '@/lib/game/store';
+     4→import { Button } from '@/components/ui/button';
+     5→import { Input } from '@/components/ui/input';
+     6→import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+     7→import { Badge } from '@/components/ui/badge';
+     8→import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+     9→import { Separator } from '@/components/ui/separator';
+    10→import { useState, useEffect, useCallback } from 'react';
+    11→import { createGame, joinGame, startGame, setupGameListeners, removeGameListeners, connectSocket, passTurn, exchangeTiles, submitMove, approveWord, sendChatMessage, disconnectSocket } from '@/lib/game/socket-client';
+    12→import { BoardView } from './board';
+    13→import { RackView } from './rack';
+    14→import { ScoreBoard } from './scoreboard';
+    15→import { ChatPanel } from './chat';
+    16→import { withTilePlaced, clearNewTiles, isBoardEmpty, SIZE, CENTER } from '@/lib/game/board';
+    17→import { TilePlacement, Tile, MoveData, GameState } from '@/lib/game/types';
+    18→import { MAX_RACK_SIZE } from '@/lib/game/game-manager';
+    19→import { 
+    20→  Crown, LogIn, Play, Users, Copy, RefreshCw, ArrowRight, 
+    21→  MessageSquare, Hand, Shuffle, Check, X, Trophy, Home, Settings,
+    22→  Sparkles, Gamepad2, Wifi, WifiOff
+    23→} from 'lucide-react';
+    24→import { toast } from 'sonner';
+    25→
+    26→// ─── Home Screen ──────────────────────────────────────────────────────────────
+    27→export function HomeScreen() {
+    28→  const { setScreen, playerName, setPlayerName } = useGameStore();
+    29→
+    30→  return (
+    31→    <div className="min-h-screen flex flex-col items-center justify-center p-4 bg-gradient-to-br from-green-700 via-green-600 to-emerald-800">
+    32→      <div className="text-center mb-8 animate-slide-up">
+    33→        <div className="text-7xl mb-4">🎯</div>
+    34→        <h1 className="text-5xl font-bold text-white mb-2">LetraMestre</h1>
+    35→        <p className="text-green-100 text-lg">O jogo de palavras multiplayer</p>
+    36→      </div>
+    37→
+    38→      <Card className="w-full max-w-sm animate-slide-up shadow-2xl border-0">
+    39→        <CardContent className="p-6 space-y-4">
+    40→          <div>
+    41→            <label className="text-sm font-medium text-muted-foreground mb-1 block">Seu nome</label>
+    42→            <Input
+    43→              value={playerName}
+    44→              onChange={(e) => setPlayerName(e.target.value)}
+    45→              placeholder="Digite seu nome..."
+    46→              maxLength={20}
+    47→              className="text-center text-lg"
+    48→            />
+    49→          </div>
+    50→
+    51→          <Separator />
+    52→
+    53→          <Button
+    54→            onClick={() => setScreen('create')}
+    55→            disabled={!playerName.trim()}
+    56→            className="w-full h-14 text-lg font-bold bg-amber-500 hover:bg-amber-600 text-white"
+    57→            size="lg"
+    58→          >
+    59→            <Crown className="mr-2 h-5 w-5" />
+    60→            Criar Partida
+    61→          </Button>
+    62→
+    63→          <Button
+    64→            onClick={() => setScreen('join')}
+    65→            disabled={!playerName.trim()}
+    66→            variant="outline"
+    67→            className="w-full h-14 text-lg font-bold border-2 border-green-600 text-green-700 hover:bg-green-50"
+    68→            size="lg"
+    69→          >
+    70→            <LogIn className="mr-2 h-5 w-5" />
+    71→            Entrar em Partida
+    72→          </Button>
+    73→
+    74→          <Separator />
+    75→
+    76→          <Button
+    77→            onClick={() => setScreen('admin-login')}
+    78→            variant="ghost"
+    79→            className="w-full text-muted-foreground"
+    80→            size="sm"
+    81→          >
+    82→            <Settings className="mr-2 h-4 w-4" />
+    83→            Painel Administrativo
+    84→          </Button>
+    85→        </CardContent>
+    86→      </Card>
+    87→
+    88→      <footer className="mt-8 text-center text-green-200/60 text-xs">
+    89→        LetraMestre v1.0 • Jogo de palavras em português
+    90→      </footer>
+    91→    </div>
+    92→  );
+    93→}
+    94→
+    95→// ─── Create Game Screen ───────────────────────────────────────────────────────
+    96→export function CreateGameScreen() {
+    97→  const { playerName, setScreen, setGameInfo, setConnected } = useGameStore();
+    98→  const [loading, setLoading] = useState(false);
+    99→
+   100→  const handleCreate = async () => {
+   101→    if (!playerName.trim()) return;
+   102→    setLoading(true);
+   103→    try {
+   104→      connectSocket();
+   105→      const result = await createGame(playerName);
+   106→      if (result.success && result.gameId) {
+   107→        setGameInfo({
+   108→          gameId: result.gameId,
+   109→          gameCode: result.gameCode!,
+   110→          playerId: result.playerId!,
+   111→          playerName: result.playerName || playerName,
+   112→          isHost: true,
+   113→        });
+   114→        setConnected(true);
+   115→        setScreen('lobby');
+   116→        toast.success('Partida criada!');
+   117→      } else {
+   118→        toast.error(result.error || 'Erro ao criar partida');
+   119→      }
+   120→    } catch (err) {
+   121→      toast.error('Erro de conexão');
+   122→    } finally {
+   123→      setLoading(false);
+   124→    }
+   125→  };
+   126→
+   127→  return (
+   128→    <div className="min-h-screen flex flex-col items-center justify-center p-4 bg-gradient-to-br from-green-700 via-green-600 to-emerald-800">
+   129→      <Card className="w-full max-w-sm shadow-2xl border-0 animate-slide-up">
+   130→        <CardHeader className="text-center">
+   131→          <Crown className="mx-auto h-12 w-12 text-amber-500 mb-2" />
+   132→          <CardTitle className="text-2xl">Criar Partida</CardTitle>
+   133→          <CardDescription>Crie uma sala e convide seus amigos</CardDescription>
+   134→        </CardHeader>
+   135→        <CardContent className="space-y-4">
+   136→          <div className="text-center p-4 bg-muted rounded-lg">
+   137→            <p className="text-sm text-muted-foreground">Jogando como</p>
+   138→            <p className="text-lg font-bold">{playerName}</p>
+   139→          </div>
+   140→
+   141→          <Button
+   142→            onClick={handleCreate}
+   143→            disabled={loading}
+   144→            className="w-full h-12 text-lg font-bold bg-amber-500 hover:bg-amber-600 text-white"
+   145→          >
+   146→            {loading ? <RefreshCw className="mr-2 h-5 w-5 animate-spin" /> : <Play className="mr-2 h-5 w-5" />}
+   147→            {loading ? 'Criando...' : 'Criar Partida'}
+   148→          </Button>
+   149→
+   150→          <Button variant="ghost" onClick={() => setScreen('home')} className="w-full">
+   151→            <ArrowRight className="mr-2 h-4 w-4 rotate-180" /> Voltar
+   152→          </Button>
+   153→        </CardContent>
+   154→      </Card>
+   155→    </div>
+   156→  );
+   157→}
+   158→
+   159→// ─── Join Game Screen ─────────────────────────────────────────────────────────
+   160→export function JoinGameScreen() {
+   161→  const { playerName, setScreen, setGameInfo, setConnected } = useGameStore();
+   162→  const [gameCode, setGameCode] = useState('');
+   163→  const [loading, setLoading] = useState(false);
+   164→
+   165→  const handleJoin = async () => {
+   166→    if (!playerName.trim() || !gameCode.trim()) return;
+   167→    setLoading(true);
+   168→    try {
+   169→      connectSocket();
+   170→      const result = await joinGame(gameCode.toUpperCase().trim(), playerName);
+   171→      if (result.success && result.gameId) {
+   172→        setGameInfo({
+   173→          gameId: result.gameId,
+   174→          gameCode: result.gameCode || gameCode.toUpperCase().trim(),
+   175→          playerId: result.playerId!,
+   176→          playerName: result.playerName || playerName,
+   177→          isHost: false,
+   178→        });
+   179→        setConnected(true);
+   180→        setScreen('lobby');
+   181→        toast.success('Conectado!');
+   182→      } else {
+   183→        toast.error(result.error || 'Erro ao entrar na partida');
+   184→      }
+   185→    } catch (err) {
+   186→      toast.error('Erro de conexão');
+   187→    } finally {
+   188→      setLoading(false);
+   189→    }
+   190→  };
+   191→
+   192→  return (
+   193→    <div className="min-h-screen flex flex-col items-center justify-center p-4 bg-gradient-to-br from-green-700 via-green-600 to-emerald-800">
+   194→      <Card className="w-full max-w-sm shadow-2xl border-0 animate-slide-up">
+   195→        <CardHeader className="text-center">
+   196→          <LogIn className="mx-auto h-12 w-12 text-green-600 mb-2" />
+   197→          <CardTitle className="text-2xl">Entrar em Partida</CardTitle>
+   198→          <CardDescription>Digite o código da sala</CardDescription>
+   199→        </CardHeader>
+   200→        <CardContent className="space-y-4">
+   201→          <div className="text-center p-3 bg-muted rounded-lg">
+   202→            <p className="text-sm text-muted-foreground">Jogando como</p>
+   203→            <p className="text-lg font-bold">{playerName}</p>
+   204→          </div>
+   205→
+   206→          <div>
+   207→            <label className="text-sm font-medium mb-1 block">Código da Sala</label>
+   208→            <Input
+   209→              value={gameCode}
+   210→              onChange={(e) => setGameCode(e.target.value.toUpperCase())}
+   211→              placeholder="Ex: ABC123"
+   212→              maxLength={6}
+   213→              className="text-center text-2xl font-mono tracking-widest uppercase"
+   214→            />
+   215→          </div>
+   216→
+   217→          <Button
+   218→            onClick={handleJoin}
+   219→            disabled={loading || gameCode.length < 4}
+   220→            className="w-full h-12 text-lg font-bold bg-green-600 hover:bg-green-700 text-white"
+   221→          >
+   222→            {loading ? <RefreshCw className="mr-2 h-5 w-5 animate-spin" /> : <LogIn className="mr-2 h-5 w-5" />}
+   223→            {loading ? 'Conectando...' : 'Entrar'}
+   224→          </Button>
+   225→
+   226→          <Button variant="ghost" onClick={() => setScreen('home')} className="w-full">
+   227→            <ArrowRight className="mr-2 h-4 w-4 rotate-180" /> Voltar
+   228→          </Button>
+   229→        </CardContent>
+   230→      </Card>
+   231→    </div>
+   232→  );
+   233→}
+   234→
+   235→// ─── Lobby Screen ─────────────────────────────────────────────────────────────
+   236→export function LobbyScreen() {
+   237→  const { gameCode, isHost, playerList, gameId, playerId, setScreen } = useGameStore();
+   238→  const [starting, setStarting] = useState(false);
+   239→
+   240→  useEffect(() => {
+   241→    const callbacks = {
+   242→      onPlayerList: (players: any) => useGameStore.getState().setPlayerList(players),
+   243→      onGameStarted: (state: any) => {
+   244→        useGameStore.getState().setGameState(state);
+   245→        useGameStore.getState().setScreen('game');
+   246→      },
+   247→      onChatMessage: (data: any) => {
+   248→        useGameStore.getState().addChatMessage(data);
+   249→      },
+   250→    };
+   251→    setupGameListeners(callbacks);
+   252→    return () => removeGameListeners();
+   253→  }, []);
+   254→
+   255→  const handleStart = async () => {
+   256→    if (!gameId || !playerId) return;
+   257→    setStarting(true);
+   258→    try {
+   259→      const result = await startGame(gameId, playerId);
+   260→      if (result.success) {
+   261→        toast.success('Jogo iniciado!');
+   262→      } else {
+   263→        toast.error(result.error || 'Erro ao iniciar');
+   264→      }
+   265→    } catch (err) {
+   266→      toast.error('Erro ao iniciar jogo');
+   267→    } finally {
+   268→      setStarting(false);
+   269→    }
+   270→  };
+   271→
+   272→  const handleCopyCode = () => {
+   273→    navigator.clipboard.writeText(gameCode);
+   274→    toast.success('Código copiado!');
+   275→  };
+   276→
+   277→  return (
+   278→    <div className="min-h-screen flex flex-col items-center justify-center p-4 bg-gradient-to-br from-green-700 via-green-600 to-emerald-800">
+   279→      <Card className="w-full max-w-md shadow-2xl border-0 animate-slide-up">
+   280→        <CardHeader className="text-center">
+   281→          <Users className="mx-auto h-10 w-10 text-green-600 mb-2" />
+   282→          <CardTitle className="text-2xl">Sala de Espera</CardTitle>
+   283→        </CardHeader>
+   284→        <CardContent className="space-y-4">
+   285→          {/* Game Code */}
+   286→          <div className="text-center p-4 bg-muted rounded-lg">
+   287→            <p className="text-sm text-muted-foreground mb-1">Código da Sala</p>
+   288→            <div className="flex items-center justify-center gap-2">
+   289→              <span className="text-3xl font-mono font-bold tracking-widest">{gameCode}</span>
+   290→              <Button size="sm" variant="ghost" onClick={handleCopyCode}>
+   291→                <Copy className="h-4 w-4" />
+   292→              </Button>
+   293→            </div>
+   294→            <p className="text-xs text-muted-foreground mt-1">Compartilhe este código com outros jogadores</p>
+   295→          </div>
+   296→
+   297→          {/* Player List */}
+   298→          <div className="space-y-2">
+   299→            <p className="text-sm font-medium">Jogadores ({playerList.length}/4)</p>
+   300→            {playerList.map((player) => (
+   301→              <div key={player.id} className="flex items-center gap-3 p-3 bg-muted/50 rounded-lg">
+   302→                <div className="w-10 h-10 rounded-full bg-primary flex items-center justify-center text-primary-foreground font-bold">
+   303→                  {player.name.charAt(0).toUpperCase()}
+   304→                </div>
+   305→                <span className="font-medium flex-1">{player.name}</span>
+   306→                {player.isHost && <Badge className="bg-amber-500 text-white">HOST</Badge>}
+   307→              </div>
+   308→            ))}
+   309→          </div>
+   310→
+   311→          {/* Action */}
+   312→          {isHost ? (
+   313→            <Button
+   314→              onClick={handleStart}
+   315→              disabled={starting || playerList.length < 2}
+   316→              className="w-full h-12 text-lg font-bold bg-amber-500 hover:bg-amber-600 text-white"
+   317→            >
+   318→              {starting ? <RefreshCw className="mr-2 h-5 w-5 animate-spin" /> : <Play className="mr-2 h-5 w-5" />}
+   319→              {starting ? 'Iniciando...' : 'Iniciar Jogo'}
+   320→            </Button>
+   321→          ) : (
+   322→            <div className="text-center p-4">
+   323→              <RefreshCw className="mx-auto h-6 w-6 animate-spin text-muted-foreground mb-2" />
+   324→              <p className="text-muted-foreground">Aguardando o anfitrião iniciar...</p>
+   325→            </div>
+   326→          )}
+   327→
+   328→          <Button variant="ghost" onClick={() => { disconnectSocket(); setScreen('home'); }} className="w-full text-destructive">
+   329→            Sair da Sala
+   330→          </Button>
+   331→        </CardContent>
+   332→      </Card>
+   333→    </div>
+   334→  );
+   335→}
+   336→
+   337→// ─── Game Screen ───────────────────────────────────────────────────────────────
+   338→export function GameScreen() {
+   339→  const store = useGameStore();
+   340→  const {
+   341→    gameState, playerId, isHost, gameId, gameCode, selectedTileIndices,
+   342→    toggleTileSelection, clearSelection, placedTiles, addPlacedTile, 
+   343→    removePlacedTile, clearPlacedTiles, placingTileIndex, setPlacingTileIndex,
+   344→    pendingWord, setPendingWord, gameOverData, setGameOverData, 
+   345→    addChatMessage, setScreen, setError, lastError
+   346→  } = store;
+   347→
+   348→  const [showChat, setShowChat] = useState(false);
+   349→  const [showExchange, setShowExchange] = useState(false);
+   350→  const [exchangeIndices, setExchangeIndices] = useState<Set<number>>(new Set());
+   351→
+   352→  // Setup socket listeners
+   353→  useEffect(() => {
+   354→    const callbacks = {
+   355→      onGameState: (state: GameState) => {
+   356→        useGameStore.getState().setGameState(state);
+   357→        // Clear placed tiles when state updates (move was accepted)
+   358→        useGameStore.getState().clearPlacedTiles();
+   359→        useGameStore.getState().clearSelection();
+   360→      },
+   361→      onGameEnded: (data: any) => {
+   362→        useGameStore.getState().setGameOverData(data);
+   363→      },
+   364→      onWordValidation: (data: any) => {
+   365→        useGameStore.getState().setPendingWord(data.word);
+   366→      },
+   367→      onChatMessage: (data: any) => {
+   368→        useGameStore.getState().addChatMessage(data);
+   369→      },
+   370→    };
+   371→    setupGameListeners(callbacks);
+   372→    return () => removeGameListeners();
+   373→  }, []);
+   374→
+   375→  if (!gameState || !playerId) return null;
+   376→
+   377→  const myPlayer = gameState.players.find(p => p.id === playerId);
+   378→  const currentPlayer = gameState.players[gameState.currentPlayerIndex];
+   379→  const isMyTurn = currentPlayer?.id === playerId;
+   380→
+   381→  // Handle tile click in rack
+   382→  const handleTileClick = (index: number) => {
+   383→    if (!isMyTurn) return;
+   384→    // If no tile is being placed, select for placement
+   385→    if (placingTileIndex === null) {
+   386→      // Toggle selection
+   387→      if (selectedTileIndices.has(index)) {
+   388→        toggleTileSelection(index);
+   389→      } else {
+   390→        setPlacingTileIndex(index);
+   391→        toggleTileSelection(index);
+   392→      }
+   393→    } else {
+   394→      // Already placing a tile - switch to this one
+   395→      setPlacingTileIndex(index);
+   396→      clearSelection();
+   397→      toggleTileSelection(index);
+   398→    }
+   399→  };
+   400→
+   401→  // Handle cell click on board
+   402→  const handleCellClick = (row: number, col: number) => {
+   403→    if (!isMyTurn || !myPlayer) return;
+   404→    
+   405→    // Check if there's a placed tile at this position - remove it
+   406→    const key = `${row},${col}`;
+   407→    if (placedTiles.has(key)) {
+   408→      removePlacedTile(row, col);
+   409→      return;
+   410→    }
+   411→
+   412→    // If we have a tile selected for placing
+   413→    if (placingTileIndex !== null && placingTileIndex < myPlayer.rack.length) {
+   414→      const tile = myPlayer.rack[placingTileIndex];
+   415→      const placement: TilePlacement = {
+   416→        row, col, tile, rackIndex: placingTileIndex,
+   417→      };
+   418→      addPlacedTile(placement);
+   419→      setPlacingTileIndex(null);
+   420→    }
+   421→  };
+   422→
+   423→  // Confirm move
+   424→  const handleConfirmMove = async () => {
+   425→    if (!gameId || !playerId || placedTiles.size === 0) return;
+   426→    
+   427→    const placements = Array.from(placedTiles.values());
+   428→    const moveData: MoveData = {
+   429→      playerId,
+   430→      placements,
+   431→    };
+   432→
+   433→    try {
+   434→      const result = await submitMove(gameId, moveData);
+   435→      if (result.success) {
+   436→        clearPlacedTiles();
+   437→        clearSelection();
+   438→        toast.success(`Jogada válida! +${result.score} pontos (${result.words?.join(', ')})`);
+   439→      } else {
+   440→        toast.error(result.error || 'Jogada inválida');
+   441→      }
+   442→    } catch (err) {
+   443→      toast.error('Erro ao enviar jogada');
+   444→    }
+   445→  };
+   446→
+   447→  // Pass turn
+   448→  const handlePassTurn = async () => {
+   449→    if (!gameId || !playerId) return;
+   450→    clearPlacedTiles();
+   451→    clearSelection();
+   452→    try {
+   453→      await passTurn(gameId, playerId);
+   454→      toast.info('Você passou a vez');
+   455→    } catch (err) {
+   456→      toast.error('Erro ao passar');
+   457→    }
+   458→  };
+   459→
+   460→  // Exchange tiles
+   461→  const handleExchange = async () => {
+   462→    if (!gameId || !playerId || exchangeIndices.size === 0) return;
+   463→    try {
+   464→      await exchangeTiles(gameId, playerId, Array.from(exchangeIndices));
+   465→      setExchangeIndices(new Set());
+   466→      setShowExchange(false);
+   467→      toast.info('Peças trocadas!');
+   468→    } catch (err) {
+   469→      toast.error('Erro ao trocar peças');
+   470→    }
+   471→  };
+   472→
+   473→  // Word validation
+   474→  const handleWordApproval = async (approved: boolean) => {
+   475→    if (!gameId || !playerId) return;
+   476→    try {
+   477→      await approveWord(gameId, playerId, approved);
+   478→      setPendingWord(null);
+   479→      toast.info(approved ? 'Palavra aprovada!' : 'Palavra rejeitada');
+   480→    } catch (err) {
+   481→      toast.error('Erro ao validar palavra');
+   482→    }
+   483→  };
+   484→
+   485→  // Build display board with placed tiles
+   486→  let displayBoard = gameState.board;
+   487→  for (const placement of placedTiles.values()) {
+   488→    displayBoard = withTilePlaced(displayBoard, placement.row, placement.col, placement.tile, true);
+   489→  }
+   490→
+   491→  return (
+   492→    <div className="min-h-screen flex flex-col bg-gradient-to-b from-amber-50 to-amber-100">
+   493→      {/* Top bar */}
+   494→      <div className="bg-primary text-primary-foreground px-3 py-2 flex items-center justify-between">
+   495→        <div className="flex items-center gap-2">
+   496→          <Gamepad2 size={18} />
+   497→          <span className="font-bold text-sm">LetraMestre</span>
+   498→          <Badge variant="secondary" className="text-xs">{gameCode}</Badge>
+   499→        </div>
+   500→        <div className="flex items-center gap-2">
+   501→          <Button size="sm" variant="ghost" className="text-primary-foreground h-7 w-7 p-0" onClick={() => setShowChat(!showChat)}>
+   502→            <MessageSquare size={16} />
+   503→          </Button>
+   504→          <Button size="sm" variant="ghost" className="text-primary-foreground h-7 w-7 p-0" onClick={() => { disconnectSocket(); setScreen('home'); }}>
+   505→            <Home size={16} />
+   506→          </Button>
+   507→        </div>
+   508→      </div>
+   509→
+   510→      {/* Score board */}
+   511→      <ScoreBoard players={gameState.players} currentPlayerId={currentPlayer?.id} myPlayerId={playerId} />
+   512→
+   513→      {/* Turn indicator */}
+   514→      <div className={`px-3 py-1.5 text-center text-sm font-medium ${isMyTurn ? 'bg-amber-500 text-white' : 'bg-muted text-muted-foreground'}`}>
+   515→        {isMyTurn ? (
+   516→          <span className="flex items-center justify-center gap-1">
+   517→            <Sparkles size={14} /> Sua vez de jogar!
+   518→          </span>
+   519→        ) : (
+   520→          <span>Vez de {currentPlayer?.name ?? ''}</span>
+   521→        )}
+   522→      </div>
+   523→
+   524→      {/* Board */}
+   525→      <div className="flex-1 flex items-center justify-center p-1 overflow-auto">
+   526→        <BoardView board={displayBoard} onCellClick={handleCellClick} isMyTurn={isMyTurn} />
+   527→      </div>
+   528→
+   529→      {/* Tile bag info */}
+   530→      <div className="text-center text-xs text-muted-foreground py-1">
+   531→        Peças no saco: {gameState.tileBagCount}
+   532→      </div>
+   533→
+   534→      {/* Player's rack */}
+   535→      <div className="px-2 pb-1">
+   536→        <RackView
+   537→          tiles={myPlayer?.rack || []}
+   538→          selectedIndices={selectedTileIndices}
+   539→          onTileClick={handleTileClick}
+   540→          disabled={!isMyTurn}
+   541→        />
+   542→      </div>
+   543→
+   544→      {/* Action buttons */}
+   545→      {isMyTurn && (
+   546→        <div className="flex gap-2 px-3 pb-3">
+   547→          <Button
+   548→            variant="outline"
+   549→            size="sm"
+   550→            className="flex-1 h-10"
+   551→            onClick={handlePassTurn}
+   552→          >
+   553→            <Hand size={16} className="mr-1" /> Passar
+   554→          </Button>
+   555→          <Button
+   556→            variant="outline"
+   557→            size="sm"
+   558→            className="flex-1 h-10"
+   559→            onClick={() => setShowExchange(true)}
+   560→            disabled={gameState.tileBagCount < 7}
+   561→          >
+   562→            <Shuffle size={16} className="mr-1" /> Trocar
+   563→          </Button>
+   564→          <Button
+   565→            size="sm"
+   566→            className="flex-1 h-10 bg-amber-500 hover:bg-amber-600 text-white"
+   567→            onClick={handleConfirmMove}
+   568→            disabled={placedTiles.size === 0}
+   569→          >
+   570→            <Check size={16} className="mr-1" /> Confirmar
+   571→          </Button>
+   572→        </div>
+   573→      )}
+   574→
+   575→      {/* Last move info */}
+   576→      {gameState.lastPlayedWord && (
+   577→        <div className="text-center text-xs text-muted-foreground pb-2">
+   578→          Última jogada: &quot;{gameState.lastPlayedWord}&quot; (+{gameState.lastPlayedScore} pts)
+   579→        </div>
+   580→      )}
+   581→
+   582→      {/* Chat drawer */}
+   583→      <Dialog open={showChat} onOpenChange={setShowChat}>
+   584→        <DialogContent className="max-w-sm h-[60vh] flex flex-col p-0">
+   585→          <DialogHeader className="p-4 pb-0">
+   586→            <DialogTitle className="flex items-center gap-2">
+   587→              <MessageSquare size={18} /> Chat
+   588→            </DialogTitle>
+   589→          </DialogHeader>
+   590→          <ChatPanel />
+   591→        </DialogContent>
+   592→      </Dialog>
+   593→
+   594→      {/* Exchange dialog */}
+   595→      <Dialog open={showExchange} onOpenChange={setShowExchange}>
+   596→        <DialogContent className="max-w-sm">
+   597→          <DialogHeader>
+   598→            <DialogTitle>Trocar Peças</DialogTitle>
+   599→            <DialogDescription>Selecione as peças que deseja trocar</DialogDescription>
+   600→          </DialogHeader>
+   601→          <div className="game-rack flex items-center justify-center gap-1 flex-wrap">
+   602→            {(myPlayer?.rack || []).map((tile, i) => (
+   603→              <button
+   604→                key={i}
+   605→                className={`tile-piece ${exchangeIndices.has(i) ? 'selected' : ''}`}
+   606→                style={{ width: 44, height: 44, fontSize: 20 }}
+   607→                onClick={() => {
+   608→                  const next = new Set(exchangeIndices);
+   609→                  if (next.has(i)) next.delete(i); else next.add(i);
+   610→                  setExchangeIndices(next);
+   611→                }}
+   612→              >
+   613→                {tile.isBlank ? '?' : tile.letter}
+   614→                {tile.value > 0 && <span className="tile-value">{tile.value}</span>}
+   615→              </button>
+   616→            ))}
+   617→          </div>
+   618→          <DialogFooter>
+   619→            <Button variant="outline" onClick={() => { setShowExchange(false); setExchangeIndices(new Set()); }}>Cancelar</Button>
+   620→            <Button onClick={handleExchange} disabled={exchangeIndices.size === 0} className="bg-amber-500 hover:bg-amber-600 text-white">
+   621→              Trocar {exchangeIndices.size} peça(s)
+   622→            </Button>
+   623→          </DialogFooter>
+   624→        </DialogContent>
+   625→      </Dialog>
+   626→
+   627→      {/* Word validation dialog */}
+   628→      <Dialog open={!!pendingWord} onOpenChange={() => setPendingWord(null)}>
+   629→        <DialogContent className="max-w-sm">
+   630→          <DialogHeader>
+   631→            <DialogTitle>Validar Palavra</DialogTitle>
+   632→            <DialogDescription>Esta palavra não foi encontrada no dicionário</DialogDescription>
+   633→          </DialogHeader>
+   634→          <div className="text-center py-4">
+   635→            <p className="text-4xl font-bold text-primary mb-2">{pendingWord}</p>
+   636→            <p className="text-sm text-muted-foreground">Os jogadores podem validar esta palavra manualmente.</p>
+   637→          </div>
+   638→          <DialogFooter className="flex gap-2">
+   639→            <Button variant="outline" onClick={() => handleWordApproval(false)} className="flex-1">
+   640→              <X size={16} className="mr-1" /> Rejeitar
+   641→            </Button>
+   642→            <Button onClick={() => handleWordApproval(true)} className="flex-1 bg-green-600 hover:bg-green-700 text-white">
+   643→              <Check size={16} className="mr-1" /> Aprovar
+   644→            </Button>
+   645→          </DialogFooter>
+   646→        </DialogContent>
+   647→      </Dialog>
+   648→
+   649→      {/* Game over dialog */}
+   650→      <Dialog open={!!gameOverData} onOpenChange={() => setGameOverData(null)}>
+   651→        <DialogContent className="max-w-sm">
+   652→          <DialogHeader>
+   653→            <DialogTitle className="text-center">🏆 Fim de Jogo!</DialogTitle>
+   654→          </DialogHeader>
+   655→          <div className="text-center py-4 space-y-4">
+   656→            <div>
+   657→              <p className="text-sm text-muted-foreground">Vencedor</p>
+   658→              <p className="text-3xl font-bold text-primary">{gameOverData?.winnerName}</p>
+   659→            </div>
+   660→            <div className="space-y-1">
+   661→              {gameOverData?.scores && Object.entries(gameOverData.scores).map(([name, score]) => (
+   662→                <div key={name} className="flex justify-between px-4 py-1 bg-muted rounded">
+   663→                  <span className="font-medium">{name}</span>
+   664→                  <span className="font-bold">{score} pts</span>
+   665→                </div>
+   666→              ))}
+   667→            </div>
+   668→          </div>
+   669→          <DialogFooter>
+   670→            <Button onClick={() => { disconnectSocket(); setScreen('home'); }} className="w-full bg-amber-500 hover:bg-amber-600 text-white">
+   671→              <Home size={16} className="mr-2" /> Voltar ao Início
+   672→            </Button>
+   673→          </DialogFooter>
+   674→        </DialogContent>
+   675→      </Dialog>
+   676→    </div>
+   677→  );
+   678→}
+   679→
