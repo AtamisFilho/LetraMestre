@@ -110,32 +110,55 @@ const BASE_WORDS: string[] = [
   "DIVERSAO","AMIGOS","PALAVRA","ANAGRAMA"
 ];
 
+/**
+ * Normalizes a word for dictionary lookup. This makes matching robust to the
+ * accent/cedilla mismatch that is inevitable in a tile-based word game: the
+ * board can only ever form unaccented letters (plus the Ç tile), while real
+ * Portuguese words carry diacritics. Stripping diacritics (and folding Ç → C)
+ * means "ABRAÇO" formed on the board matches the stored "ABRACO", and a user
+ * approving "café" registers the same key as the in-game "CAFE".
+ */
+export function normalizeWord(word: string): string {
+  return word
+    .normalize('NFD')              // split base letters from combining accents
+    .replace(/[̀-ͯ]/g, '') // drop the combining accent marks
+    .replace(/Ç/gi, 'C')          // fold cedilla
+    .toUpperCase()
+    .trim();
+}
+
 class Dictionary {
   private validWords: Set<string>;
   private manuallyApproved: Set<string>;
   private bannedWords: Set<string>;
 
   constructor() {
-    this.validWords = new Set(BASE_WORDS.map(w => w.toUpperCase().trim()));
+    this.validWords = new Set(BASE_WORDS.map(normalizeWord));
     this.manuallyApproved = new Set();
     this.bannedWords = new Set();
   }
 
   isValidWord(word: string): boolean {
-    const normalized = word.toUpperCase().trim();
+    const normalized = normalizeWord(word);
     if (normalized.length < 2) return false;
     if (this.bannedWords.has(normalized)) return false;
     return this.validWords.has(normalized) || this.manuallyApproved.has(normalized);
   }
 
-  addApprovedWord(word: string, addedBy: string = 'admin'): void {
-    const normalized = word.toUpperCase().trim();
+  addApprovedWord(word: string, _addedBy: string = 'admin'): void {
+    const normalized = normalizeWord(word);
     this.manuallyApproved.add(normalized);
+    this.bannedWords.delete(normalized);
   }
 
   banWord(word: string): void {
-    const normalized = word.toUpperCase().trim();
+    const normalized = normalizeWord(word);
     this.bannedWords.add(normalized);
+    this.manuallyApproved.delete(normalized);
+  }
+
+  isBanned(word: string): boolean {
+    return this.bannedWords.has(normalizeWord(word));
   }
 
   getWordCount(): number {
@@ -143,11 +166,11 @@ class Dictionary {
   }
 
   loadApprovedWords(words: string[]): void {
-    words.forEach(w => this.manuallyApproved.add(w.toUpperCase().trim()));
+    words.forEach(w => this.manuallyApproved.add(normalizeWord(w)));
   }
 
   loadBannedWords(words: string[]): void {
-    words.forEach(w => this.bannedWords.add(w.toUpperCase().trim()));
+    words.forEach(w => this.bannedWords.add(normalizeWord(w)));
   }
 }
 

@@ -335,6 +335,62 @@ export class GameManager {
     return this._gameState.players.find(p => p.id === playerId);
   }
 
+  /**
+   * Marks a player's connection status. Returns true if the state changed.
+   * Used by the realtime layer so that mid-game disconnects are reflected to
+   * everyone instead of being silently dropped.
+   */
+  setPlayerConnection(playerId: string, isConnected: boolean): boolean {
+    const idx = this._gameState.players.findIndex(p => p.id === playerId);
+    if (idx === -1 || this._gameState.players[idx].isConnected === isConnected) return false;
+    const players = [...this._gameState.players];
+    players[idx] = { ...players[idx], isConnected };
+    this.updateState({ ...this._gameState, players });
+    return true;
+  }
+
+  /**
+   * Ensures there is always exactly one host while at least one player is
+   * connected. If the current host left, the host role migrates to the
+   * longest-standing connected player. Returns the new host id (or null).
+   */
+  reassignHostIfNeeded(): string | null {
+    const state = this._gameState;
+    const connected = state.players.filter(p => p.isConnected);
+    if (connected.length === 0) return null;
+    const hostStillHere = state.players.some(p => p.isHost && p.isConnected);
+    if (hostStillHere) return state.players.find(p => p.isHost)?.id ?? null;
+
+    const newHost = [...connected].sort((a, b) => a.joinOrder - b.joinOrder)[0];
+    const players = state.players.map(p => ({ ...p, isHost: p.id === newHost.id }));
+    this.updateState({ ...state, players });
+    return newHost.id;
+  }
+
+  /**
+   * If it is currently the given (now-disconnected) player's turn during an
+   * active game, advance the turn so the match doesn't stall waiting on someone
+   * who left. Counts as a pass for end-of-game detection. Returns true if the
+   * turn was advanced.
+   */
+  skipTurnIfCurrent(playerId: string): boolean {
+    const state = this._gameState;
+    if (state.phase !== 'IN_PROGRESS') return false;
+    if (state.players.length === 0) return false;
+    if (state.players[state.currentPlayerIndex]?.id !== playerId) return false;
+
+    let newState: GameState = {
+      ...state,
+      consecutivePasses: state.consecutivePasses + 1,
+      currentPlayerIndex: (state.currentPlayerIndex + 1) % state.players.length,
+    };
+    if (this.shouldEndGame(newState)) {
+      newState = { ...newState, phase: 'GAME_OVER' };
+    }
+    this.updateState(newState);
+    return true;
+  }
+
   getPersonalizedState(playerId: string): GameState {
     const state = this._gameState;
     return {

@@ -8,7 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Separator } from '@/components/ui/separator';
 import { useState, useEffect, useCallback } from 'react';
-import { createGame, joinGame, startGame, setupGameListeners, removeGameListeners, connectSocket, passTurn, exchangeTiles, submitMove, approveWord, sendChatMessage, disconnectSocket } from '@/lib/game/socket-client';
+import { createGame, joinGame, startGame, setupGameListeners, removeGameListeners, connectSocket, passTurn, exchangeTiles, submitMove, approveWord, sendChatMessage, disconnectSocket, rejoinGame, onReconnect } from '@/lib/game/socket-client';
 import { BoardView } from './board';
 import { RackView } from './rack';
 import { ScoreBoard } from './scoreboard';
@@ -369,7 +369,18 @@ export function GameScreen() {
       },
     };
     setupGameListeners(callbacks);
-    return () => removeGameListeners();
+
+    // Transparently resume the match if the socket drops and reconnects.
+    const { gameId: gid, playerId: pid } = useGameStore.getState();
+    const unsubscribe = onReconnect(async () => {
+      if (!gid || !pid) return;
+      const result = await rejoinGame(gid, pid);
+      if (result.success) {
+        toast.success('Reconectado à partida');
+      }
+    });
+
+    return () => { removeGameListeners(); unsubscribe(); };
   }, []);
 
   if (!gameState || !playerId) return null;

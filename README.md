@@ -195,7 +195,45 @@ O aplicativo web usa Prisma ORM com SQLite para persistência:
 
 ---
 
+## ⚙️ Escalabilidade e Operação
+
+O servidor de jogo (Socket.io) foi endurecido para rodar com muitas partidas e jogadores simultâneos:
+
+- **Lookup O(1) por código** — partidas são indexadas por código, sem varredura linear a cada `join`.
+- **Reconexão transparente** — quedas de rede não custam o assento do jogador: o rack é preservado e a partida é retomada automaticamente (evento `game:rejoin`, com janela de carência configurável).
+- **Migração de host e avanço de turno** — se o anfitrião sai, o papel migra para o jogador mais antigo conectado; se o jogador da vez cai, o turno avança para a partida não travar.
+- **Coletor de salas ociosas** — lobbies abandonados e jogos finalizados são reciclados automaticamente, evitando vazamento de memória em servidores de longa duração.
+- **Rate limiting e sanitização** — buckets por socket para jogadas/chat/criação, além de limpeza de nomes e mensagens (controle de caracteres invisíveis/bidi).
+- **Dicionário persistente** — palavras aprovadas/banidas são carregadas do banco na inicialização e gravadas a cada decisão; o casamento é **insensível a acento e cedilha** (`ABRAÇO` ≡ `ABRACO`, `café` ≡ `CAFE`).
+- **Observabilidade** — endpoints HTTP `GET /healthz` e `GET /metrics` no servidor de jogo.
+- **Escala horizontal opcional** — defina `REDIS_URL` para distribuir eventos entre múltiplas instâncias via adaptador Redis do Socket.io (degrada graciosamente se ausente).
+
+### Variáveis de ambiente do game server
+
+| Variável | Padrão | Descrição |
+|----------|--------|-----------|
+| `GAME_SERVER_PORT` | `3003` | Porta do servidor Socket.io |
+| `WEB_API_URL` | `http://localhost:3000` | Base da API web para persistência |
+| `REDIS_URL` | — | Habilita o adaptador Redis (multi-instância) |
+| `DISCONNECT_GRACE_MS` | `45000` | Janela de reconexão antes de liberar o assento |
+| `WAITING_ROOM_TTL_MS` | `1800000` | TTL de lobbies ociosos |
+| `FINISHED_ROOM_TTL_MS` | `300000` | TTL de jogos finalizados |
+| `ABANDONED_ROOM_TTL_MS` | `600000` | TTL de salas sem ninguém conectado |
+
+No frontend, o tabuleiro 15×15 memoriza as células (compara por valor), evitando re-renderizar as 225 células a cada atualização de estado.
+
+---
+
 ## 📝 Changelog
+
+### v2.1.0 - Escala e Robustez (2026)
+- ✅ Reconexão transparente de jogadores (preserva rack e retoma a partida)
+- ✅ Migração automática de host e avanço de turno em desconexões
+- ✅ Lookup de partidas O(1) e coletor de salas ociosas (anti-vazamento de memória)
+- ✅ Rate limiting por socket e sanitização de entradas
+- ✅ Dicionário persistente em banco e casamento insensível a acento/cedilha
+- ✅ Endpoints `/healthz` e `/metrics`; suporte opcional a Redis (escala horizontal)
+- ✅ Memoização das células do tabuleiro no frontend
 
 ### v2.0.0 - Versão Web (2025)
 - ✅ Aplicativo web completo com Next.js

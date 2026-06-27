@@ -238,6 +238,36 @@ export function sendChatMessage(gameId: string, playerId: string, playerName: st
   getSocket().emit('chat:message', { gameId, playerId, playerName, message });
 }
 
+export async function rejoinGame(gameId: string, playerId: string): Promise<{
+  success: boolean;
+  gameId?: string;
+  gameCode?: string;
+  playerId?: string;
+  playerName?: string;
+  isHost?: boolean;
+  phase?: string;
+  error?: string;
+}> {
+  try {
+    const connected = await waitForConnection();
+    if (!connected) return { success: false, error: 'Não foi possível reconectar' };
+    return await emitWithTimeout<any>('game:rejoin', { gameId, playerId });
+  } catch (err: any) {
+    return { success: false, error: err.message || 'Erro de reconexão' };
+  }
+}
+
+/**
+ * Registers a handler that fires whenever the underlying socket (re)connects.
+ * Returns an unsubscribe function. Used to transparently resume a match after
+ * a network blip without the player losing their seat.
+ */
+export function onReconnect(handler: () => void): () => void {
+  const s = getSocket();
+  s.on('connect', handler);
+  return () => s.off('connect', handler);
+}
+
 export async function getGameInfo(gameCode: string): Promise<{
   success: boolean;
   exists: boolean;

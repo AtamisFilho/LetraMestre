@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback, memo } from 'react';
 import { Board, BoardCell, CellBonus, Tile } from '@/lib/game/types';
 import { SIZE } from '@/lib/game/board';
 
@@ -33,7 +33,11 @@ function getBonusClass(bonus: CellBonus): string {
   }
 }
 
-function BoardCellView({ cell, onClick, isMyTurn, size }: BoardCellProps) {
+// Memoized cell: on a 15x15 board a single move would otherwise re-render all
+// 225 cells. Because each server broadcast deserializes fresh objects, we
+// compare by value (tile identity + relevant flags) so only the handful of
+// cells that actually changed re-render.
+const BoardCellView = memo(function BoardCellView({ cell, onClick, isMyTurn, size }: BoardCellProps) {
   const hasTile = cell.tile !== null;
   const fontSize = Math.max(size * 0.45, 10);
   const bonusFontSize = Math.max(size * 0.28, 7);
@@ -63,7 +67,17 @@ function BoardCellView({ cell, onClick, isMyTurn, size }: BoardCellProps) {
       ) : null}
     </div>
   );
-}
+}, (prev, next) => {
+  return (
+    prev.size === next.size &&
+    prev.isMyTurn === next.isMyTurn &&
+    prev.onClick === next.onClick &&
+    prev.cell.bonus === next.cell.bonus &&
+    prev.cell.isNewlyPlaced === next.cell.isNewlyPlaced &&
+    prev.cell.tile?.id === next.cell.tile?.id &&
+    prev.cell.tile?.assignedLetter === next.cell.tile?.assignedLetter
+  );
+});
 
 interface BoardViewProps {
   board: Board;
@@ -73,6 +87,14 @@ interface BoardViewProps {
 
 export function BoardView({ board, onCellClick, isMyTurn }: BoardViewProps) {
   const [cellSize, setCellSize] = useState(28);
+
+  // Keep a stable click handler so memoized cells aren't invalidated every
+  // render just because the parent re-created its callback closure.
+  const onCellClickRef = useRef(onCellClick);
+  onCellClickRef.current = onCellClick;
+  const handleClick = useCallback((row: number, col: number) => {
+    onCellClickRef.current(row, col);
+  }, []);
 
   useEffect(() => {
     const updateSize = () => {
@@ -97,7 +119,7 @@ export function BoardView({ board, onCellClick, isMyTurn }: BoardViewProps) {
           <BoardCellView
             key={`${cell.row}-${cell.col}`}
             cell={cell}
-            onClick={onCellClick}
+            onClick={handleClick}
             isMyTurn={isMyTurn}
             size={cellSize}
           />

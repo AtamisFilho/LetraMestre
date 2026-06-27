@@ -1,11 +1,16 @@
 {
   "name": "letramestre-game-server",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
   "scripts": {
-    "dev": "bun --hot index.ts"
+    "dev": "bun --hot index.ts",
+    "start": "bun index.ts"
   },
   "dependencies": {
     "socket.io": "^4.8.3"
+  },
+  "optionalDependencies": {
+    "@socket.io/redis-adapter": "^8.3.0",
+    "redis": "^4.7.0"
   }
 }
