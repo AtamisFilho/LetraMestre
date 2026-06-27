@@ -120,9 +120,9 @@ const BASE_WORDS: string[] = [
  */
 export function normalizeWord(word: string): string {
   return word
-    .normalize('NFD')              // split base letters from combining accents
-    .replace(/[̀-ͯ]/g, '') // drop the combining accent marks
-    .replace(/Ç/gi, 'C')          // fold cedilla
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/Ç/gi, "C")
     .toUpperCase()
     .trim();
 }

@@ -67,18 +67,19 @@ function allow(socketId: string, action: string, capacity: number, refillPerSec:
 
 // ─── Database Persistence Helpers (best-effort, non-blocking) ─────────────────
 async function postJson(path: string, method: string, body: Record<string, any>): Promise<void> {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), 5000);
   try {
-    const ctrl = new AbortController();
-    const t = setTimeout(() => ctrl.abort(), 5000);
     await fetch(`${WEB_API_URL}${path}`, {
       method,
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
       signal: ctrl.signal,
     });
-    clearTimeout(t);
   } catch {
     // Persistence is best-effort; the in-memory game is the source of truth.
+  } finally {
+    clearTimeout(t);
   }
 }
 
@@ -133,8 +134,6 @@ const codeIndex = new Map<string, string>();
 async function maybeAttachRedis(): Promise<void> {
   if (!process.env.REDIS_URL) return;
   try {
-    // Resolved via string variables so the optional peer deps aren't required
-    // at type-check / install time — only when REDIS_URL is actually set.
     const adapterMod = "@socket.io/redis-adapter";
     const redisMod = "redis";
     const [{ createAdapter }, { createClient }] = await Promise.all([
@@ -142,7 +141,9 @@ async function maybeAttachRedis(): Promise<void> {
       import(redisMod),
     ]);
     const pubClient = createClient({ url: process.env.REDIS_URL });
+    pubClient.on("error", (err) => console.error("[REDIS] Pub Client Error:", err));
     const subClient = pubClient.duplicate();
+    subClient.on("error", (err) => console.error("[REDIS] Sub Client Error:", err));
     await Promise.all([pubClient.connect(), subClient.connect()]);
     io.adapter(createAdapter(pubClient, subClient));
     console.log("[SCALE] Redis adapter attached — multi-instance fan-out enabled");
@@ -458,6 +459,9 @@ io.on("connection", (socket) => {
 
   // ─── Pass Turn ──────────────────────────────────────────────────────────
   socket.on("game:pass", (data: { gameId: string; playerId: string }, callback) => {
+    if (currentPlayerId && data.playerId !== currentPlayerId) {
+      return fail(callback, "Identidade do jogador inválida");
+    }
     const room = gameRooms.get(data?.gameId);
     if (!room) return fail(callback, "Partida não encontrada");
     touch(room);
@@ -470,6 +474,9 @@ io.on("connection", (socket) => {
 
   // ─── Exchange Tiles ─────────────────────────────────────────────────────
   socket.on("game:exchange", (data: { gameId: string; playerId: string; tileIndices: number[] }, callback) => {
+    if (currentPlayerId && data.playerId !== currentPlayerId) {
+      return fail(callback, "Identidade do jogador inválida");
+    }
     const room = gameRooms.get(data?.gameId);
     if (!room) return fail(callback, "Partida não encontrada");
     touch(room);
@@ -483,6 +490,9 @@ io.on("connection", (socket) => {
 
   // ─── Word Approval ──────────────────────────────────────────────────────
   socket.on("game:word-approval", (data: { gameId: string; playerId: string; approved: boolean }, callback) => {
+    if (currentPlayerId && data.playerId !== currentPlayerId) {
+      return fail(callback, "Identidade do jogador inválida");
+    }
     const room = gameRooms.get(data?.gameId);
     if (!room) return fail(callback, "Partida não encontrada");
     touch(room);
@@ -518,6 +528,7 @@ io.on("connection", (socket) => {
 
   // ─── Disconnect ─────────────────────────────────────────────────────────
   socket.on("disconnect", () => {
+    buckets.delete(socket.id);
     if (!currentGameId || !currentPlayerId) return;
     const room = gameRooms.get(currentGameId);
     if (!room) return;
