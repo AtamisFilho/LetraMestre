@@ -134,13 +134,33 @@ class GameClient {
     }
     
     fun disconnect() {
-        scope.launch {
-            session?.close()
-            client?.close()
+        // Fecha o WebSocket/HttpClient em um filho NonCancellable do scope
+        // para que o close complete mesmo após o `scope.cancel()` (um
+        // `scope.launch` comum seria cancelado pelo `scope.cancel()` antes
+        // de rodar). Em seguida chama `scope.cancel()` para encerrar o
+        // SupervisorJob e todos os collectors ainda ativos (loop de recebimento
+        // do WebSocket, jobs de submitMove/passTurn/etc.). Corrige o leak do
+        // scope que mantinha sockets zombie + estado morto após disconnect.
+        if (scope.isActive) {
+            scope.launch(NonCancellable) {
+                try {
+                    session?.close()
+                    client?.close()
+                } catch (_: Throwable) {
+                    // best-effort: o scope.cancel() derruba a conexão
+                    // subjacente via Ktor em qualquer caso.
+                }
+                session = null
+                client = null
+                _connectionState.value = ConnectionState.Disconnected
+            }
+        } else {
+            // Já desconectado: limpa sincronamente.
             session = null
             client = null
             _connectionState.value = ConnectionState.Disconnected
         }
+        scope.cancel()
     }
 }
 

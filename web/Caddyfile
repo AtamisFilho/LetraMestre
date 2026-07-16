@@ -1,10 +1,19 @@
 :81 {
-	@transform_port_query {
-		query XTransformPort=*
+	# SSRF mitigation: allow-list XTransformPort to exactly 3000 (Next.js) or
+	# 3003 (game-server). Caddy's `query` matcher performs exact key=value
+	# matching, so values like `30003`, `0300`, `3000x`, `6379`, etc. do NOT
+	# match either named matcher and fall through to the default `handle`
+	# block (proxy to :3000). Attackers can never reach an internal service
+	# the deployer did not explicitly publish here.
+	@api_port {
+		query XTransformPort=3000
+	}
+	@game_port {
+		query XTransformPort=3003
 	}
 
-	handle @transform_port_query {
-		reverse_proxy localhost:{query.XTransformPort} {
+	handle @api_port {
+		reverse_proxy localhost:3000 {
 			header_up Host {host}
 			header_up X-Forwarded-For {remote_host}
 			header_up X-Forwarded-Proto {scheme}
@@ -12,6 +21,16 @@
 		}
 	}
 
+	handle @game_port {
+		reverse_proxy localhost:3003 {
+			header_up Host {host}
+			header_up X-Forwarded-For {remote_host}
+			header_up X-Forwarded-Proto {scheme}
+			header_up X-Real-IP {remote_host}
+		}
+	}
+
+	# Default: serve the Next.js app. Any unrecognized XTransformPort lands here.
 	handle {
 		reverse_proxy localhost:3000 {
 			header_up Host {host}
@@ -19,5 +38,18 @@
 			header_up X-Forwarded-Proto {scheme}
 			header_up X-Real-IP {remote_host}
 		}
+	}
+
+	# Security headers applied to all responses.
+	header {
+		X-Frame-Options "DENY"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Permissions-Policy "geolocation=(), microphone=(), camera=()"
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		# CSP is enforced on the Next.js layer too; this is defense-in-depth.
+		# 'connect-src' includes ws:/wss: so the browser can reach the
+		# game-server through Caddy's reverse proxy.
+		Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' ws: wss: http: https:; frame-ancestors 'none'"
 	}
 }

@@ -12,10 +12,16 @@ export async function GET() {
     const approvedWords = await db.approvedWord.count();
     const bannedWords = await db.bannedWord.count();
 
-    // Average score
-    const moves = await db.move.findMany({ where: { moveType: 'place' }, select: { score: true } });
-    const avgScore = moves.length > 0 
-      ? Math.round(moves.reduce((sum, m) => sum + m.score, 0) / moves.length) 
+    // Average score — computed in DB (audit 2-b A5) instead of loading every
+    // place-move row into JS memory. _avg.score is null when _count=0; the
+    // fallback preserves the prior "no moves → 0" behavior.
+    const placeAgg = await db.move.aggregate({
+      _avg: { score: true },
+      _count: true,
+      where: { moveType: 'place' },
+    });
+    const avgScore = placeAgg._count > 0 && placeAgg._avg.score != null
+      ? Math.round(placeAgg._avg.score)
       : 0;
 
     // Top scoring moves

@@ -60,6 +60,10 @@ export class TileBag {
   }
 
   draw(count: number): Tile[] {
+    // Guard against NaN, Infinity, negative numbers, and zero: callers
+    // would otherwise slice an unexpected number of tiles (or, with
+    // count = Infinity, drain the entire bag in one shot).
+    if (!Number.isFinite(count) || count <= 0) return [];
     const drawn = this.tiles.slice(0, Math.min(count, this.tiles.length));
     this.tiles = this.tiles.slice(drawn.length);
     return drawn;

@@ -1,2 +1,25 @@
-# Project exclude paths
+# ─── Android / Gradle ─────────────────────────────────────────────────────────
 /.gradle/
+/build/
+/app/build/
+*.apk
+*.aab
+*.ap_
+*.dex
+local.properties
+*.keystore
+*.jks
+
+# ─── IDEs ─────────────────────────────────────────────────────────────────────
+.idea/
+*.iml
+*.iws
+*.ipr
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# ─── OS ───────────────────────────────────────────────────────────────────────
+Thumbs.db
+desktop.ini

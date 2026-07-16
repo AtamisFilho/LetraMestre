@@ -1,0 +1,40 @@
+services:
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    env_file:
+      - ./web/.env
+    depends_on:
+      - game-server
+    restart: unless-stopped
+
+  game-server:
+    build:
+      context: ./web
+      dockerfile: mini-services/game-server/Dockerfile
+    ports:
+      - "3003:3003"
+    env_file:
+      - ./web/.env
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./web/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - web
+      - game-server
+    restart: unless-stopped
+
+volumes:
+  caddy_data:
+  caddy_config:

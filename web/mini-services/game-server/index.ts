@@ -1,5 +1,6 @@
 import { createServer, IncomingMessage, ServerResponse } from "http";
 import { Server } from "socket.io";
+import { jwtVerify } from "jose";
 import {
   GameManager,
   MAX_PLAYERS,
@@ -7,11 +8,22 @@ import {
   type MoveData,
   type PlayerInfo,
   type Tile,
+  type GameState,
 } from "../../src/lib/game/index";
 
 // ─── Configuration (env-overridable for different deploy targets) ─────────────
 const PORT = Number(process.env.GAME_SERVER_PORT ?? 3003);
 const WEB_API_URL = process.env.WEB_API_URL ?? "http://localhost:3000";
+// Browser origin allowed by CORS. Default permits local Next.js dev.
+// In production set WEB_ORIGIN to the public URL (e.g. https://letramestre.app).
+const WEB_ORIGIN = process.env.WEB_ORIGIN ?? "http://localhost:3000";
+// Shared secret with the web app for service-to-service calls.
+const INTERNAL_API_KEY = process.env.INTERNAL_API_KEY ?? "";
+// Same AUTH_SECRET the web app uses to sign admin JWTs. Used to verify
+// admin tokens that arrive on the socket connection. When unset (or shorter
+// than 16 chars) admin socket events are rejected — there is no implicit
+// admin role.
+const AUTH_SECRET = process.env.AUTH_SECRET ?? "";
 // Idle rooms are reclaimed so a long-running server doesn't leak memory as
 // thousands of abandoned lobbies/finished games accumulate.
 const WAITING_ROOM_TTL_MS = Number(process.env.WAITING_ROOM_TTL_MS ?? 30 * 60_000); // 30 min
@@ -23,6 +35,42 @@ const DISCONNECT_GRACE_MS = Number(process.env.DISCONNECT_GRACE_MS ?? 45_000);
 
 const MAX_NAME_LEN = 20;
 const MAX_CHAT_LEN = 280;
+
+// Allowed CORS origins. We always include localhost:3000 so dev tooling
+// keeps working when WEB_ORIGIN is unset. In production set WEB_ORIGIN to
+// the public URL.
+const ALLOWED_ORIGINS = Array.from(
+  new Set([WEB_ORIGIN, "http://localhost:3000"].filter(Boolean)),
+);
+
+function getAuthSecret(): Uint8Array | null {
+  if (!AUTH_SECRET || AUTH_SECRET.length < 16) return null;
+  return new TextEncoder().encode(AUTH_SECRET);
+}
+
+/**
+ * Verifies an admin JWT issued by the web app. Returns the username on
+ * success, or null if the token is missing/malformed/expired/unsigned.
+ */
+async function isAdminToken(token: unknown): Promise<string | null> {
+  if (typeof token !== "string" || !token) return null;
+  const secret = getAuthSecret();
+  if (!secret) return null;
+  try {
+    const { payload } = await jwtVerify(token, secret, { algorithms: ["HS256"] });
+    if (typeof payload.username !== "string") return null;
+    return payload.username;
+  } catch {
+    return null;
+  }
+}
+
+/** Headers attached to every call we make back into the web API. */
+function internalHeaders(): Record<string, string> {
+  const h: Record<string, string> = { "Content-Type": "application/json" };
+  if (INTERNAL_API_KEY) h["x-internal-key"] = INTERNAL_API_KEY;
+  return h;
+}
 
 // ─── Lightweight metrics (exposed on /metrics for ops/autoscaling) ────────────
 const metrics = {
@@ -72,7 +120,7 @@ async function postJson(path: string, method: string, body: Record<string, any>)
   try {
     await fetch(`${WEB_API_URL}${path}`, {
       method,
-      headers: { "Content-Type": "application/json" },
+      headers: internalHeaders(),
       body: JSON.stringify(body),
       signal: ctrl.signal,
     });
@@ -96,7 +144,10 @@ async function loadDictionaryFromDb(): Promise<void> {
   try {
     const ctrl = new AbortController();
     const t = setTimeout(() => ctrl.abort(), 5000);
-    const res = await fetch(`${WEB_API_URL}/api/words?XTransformPort=3000`, { signal: ctrl.signal });
+    const res = await fetch(`${WEB_API_URL}/api/words?XTransformPort=3000`, {
+      headers: internalHeaders(),
+      signal: ctrl.signal,
+    });
     clearTimeout(t);
     if (!res.ok) return;
     const data = (await res.json()) as { approved?: { word: string }[]; banned?: { word: string }[] };
@@ -105,6 +156,272 @@ async function loadDictionaryFromDb(): Promise<void> {
     console.log(`[DICT] loaded ${data.approved?.length ?? 0} approved / ${data.banned?.length ?? 0} banned words`);
   } catch {
     console.warn("[DICT] could not load persisted words (web API offline?) — using base dictionary");
+  }
+}
+
+// ─── Crash recovery: persist-on-mutation + rehydrate-on-startup ───────────────
+// (audit 2-a F15 / 2-b: "restart do game-server = todas as partidas evaporam")
+//
+// Strategy: every GameManager mutation fires onUpdate → persistFullState(gameId)
+// debounces a POST /api/game {action:'sync'} by PERSIST_DEBOUNCE_MS (trailing
+// edge — pending timer always flushes the LATEST snapshot). flushPersist(gameId)
+// cancels the timer and flushes immediately; called from destroyRoom and at
+// game:end so the last mutation survives a restart. rehydrateRooms() runs at
+// startup to rebuild the in-memory gameRooms Map from the DB.
+const PERSIST_DEBOUNCE_MS = Number(process.env.PERSIST_DEBOUNCE_MS ?? 1500);
+
+interface PendingSnapshot {
+  state: GameState;
+  tileBagState: Tile[];
+}
+const persistTimers = new Map<string, ReturnType<typeof setTimeout>>();
+const pendingSnapshots = new Map<string, PendingSnapshot>();
+
+/**
+ * Capture the latest state for `gameId` and schedule a debounced flush. If a
+ * timer is already pending for this gameId, the snapshot is updated but the
+ * timer is NOT reset — trailing-edge semantics ensure the timer fires at the
+ * original time and flushes whatever snapshot is current at that moment.
+ */
+function persistFullState(gameId: string): void {
+  const room = gameRooms.get(gameId);
+  if (!room) return;
+  // Read tileBagState dynamically — it's reassigned on every move/exchange.
+  pendingSnapshots.set(gameId, {
+    state: room.gameManager.gameState,
+    tileBagState: room.tileBagState,
+  });
+  if (persistTimers.has(gameId)) return; // trailing edge
+  const timer = setTimeout(() => {
+    persistTimers.delete(gameId);
+    flushPersist(gameId);
+  }, PERSIST_DEBOUNCE_MS);
+  timer.unref?.();
+  persistTimers.set(gameId, timer);
+}
+
+/**
+ * Cancel any pending debounced flush for `gameId` and POST the latest snapshot
+ * immediately. Used by destroyRoom (so the last mutation survives) and at
+ * game:end (so the final board+winner lands without waiting for the debounce).
+ * If no snapshot is pending, this is a no-op.
+ */
+function flushPersist(gameId: string): void {
+  const timer = persistTimers.get(gameId);
+  if (timer) { clearTimeout(timer); persistTimers.delete(gameId); }
+  const snapshot = pendingSnapshots.get(gameId);
+  if (!snapshot) return;
+  pendingSnapshots.delete(gameId);
+  const body = buildSyncBody(snapshot.state, snapshot.tileBagState, gameId);
+  void postJson(`/api/game?XTransformPort=3000`, "POST", body);
+}
+
+/**
+ * Map a GameManager state to the POST /api/game {action:'sync'} payload shape.
+ * Board/tileBag/players' racks are JSON.stringify'd (DB columns are String to
+ * avoid Json migration risk). serverGameId is sent so rehydrate can rebuild
+ * the gameRooms Map with the SAME key the clients already hold.
+ */
+function buildSyncBody(state: GameState, tileBagState: Tile[], gameId: string): Record<string, unknown> {
+  const status = state.phase === "WAITING_FOR_PLAYERS" ? "waiting"
+    : state.phase === "GAME_OVER" ? "finished"
+    : "playing"; // IN_PROGRESS or VALIDATION_PENDING (both 'playing' in DB)
+  let winnerId: string | null = null;
+  let winnerName: string | null = null;
+  if (state.phase === "GAME_OVER" && state.players.length > 0) {
+    const winner = state.players.reduce((best, p) => (p.score > best.score ? p : best), state.players[0]);
+    winnerId = winner.id;
+    winnerName = winner.name;
+  }
+  const host = state.players.find((p) => p.isHost);
+  return {
+    action: "sync",
+    gameCode: state.gameCode,
+    serverGameId: gameId,
+    status,
+    hostId: host?.id ?? "",
+    hostName: host?.name ?? "",
+    playerCount: state.players.length,
+    boardState: JSON.stringify(state.board),
+    tileBagState: JSON.stringify(tileBagState),
+    winnerId,
+    winnerName,
+    players: state.players.map((p) => ({
+      id: p.id,
+      name: p.name,
+      score: p.score,
+      rack: p.rack,
+      isHost: p.isHost,
+      isConnected: p.isConnected,
+      joinOrder: p.joinOrder,
+    })),
+  };
+}
+
+/**
+ * Wire the GameManager's onUpdate callback to persistFullState. The closure
+ * captures `gameId` and reads `room.tileBagState` dynamically at flush time
+ * (the field is reassigned on every move/exchange, so capturing it would
+ * persist a stale reference).
+ */
+function wireOnUpdate(gameId: string, room: GameRoom): void {
+  room.gameManager.setOnUpdate(() => {
+    // Keep tileBagState in sync — the GameManager mutates the bag internally.
+    room.tileBagState = room.gameManager.getTileBagState();
+    persistFullState(gameId);
+  });
+}
+
+// ─── Defensive parsers for rehydrate ─────────────────────────────────────────
+function safeParseJson(raw: unknown): any {
+  if (typeof raw !== "string" || !raw.trim()) return null;
+  try { return JSON.parse(raw); } catch { return null; }
+}
+
+function safeParseRack(raw: unknown): Tile[] {
+  const parsed = safeParseJson(raw);
+  if (!Array.isArray(parsed)) return [];
+  // Filter to objects that quack like a Tile — a malformed row mustn't crash
+  // the GameManager downstream.
+  return parsed.filter((t): t is Tile =>
+    !!t && typeof t === "object" &&
+    typeof (t as Tile).letter === "string" &&
+    typeof (t as Tile).id === "string"
+  );
+}
+
+function isValidBoardShape(board: any): boolean {
+  if (!board || typeof board !== "object") return false;
+  if (!Array.isArray(board.cells) || board.cells.length !== 15) return false;
+  for (const row of board.cells) {
+    if (!Array.isArray(row) || row.length !== 15) return false;
+  }
+  return typeof board.size === "number" && board.size === 15;
+}
+
+interface DbGameRow {
+  id: string;
+  code: string;
+  status: string;
+  serverGameId: string | null;
+  boardState: string;
+  tileBagState: string;
+  createdAt: string;
+  players: {
+    id: string;
+    name: string;
+    score: number;
+    rack: string;
+    isHost: boolean;
+    isConnected: boolean;
+    joinOrder: number;
+  }[];
+}
+
+/**
+ * Best-effort GET helper for service-to-service reads (mirrors postJson's
+ * timeout + x-internal-key behavior). Returns null on any failure.
+ */
+async function getJson(path: string): Promise<any | null> {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), 10000);
+  try {
+    const res = await fetch(`${WEB_API_URL}${path}`, {
+      headers: internalHeaders(),
+      signal: ctrl.signal,
+    });
+    clearTimeout(t);
+    if (!res.ok) return null;
+    return await res.json();
+  } catch {
+    clearTimeout(t);
+    return null;
+  }
+}
+
+/**
+ * Rebuild the in-memory gameRooms Map from the DB so a server restart doesn't
+ * evaporate every active match. Called in main() AFTER loadDictionaryFromDb()
+ * and BEFORE httpServer.listen(). Best-effort: any network/parse failure is
+ * logged and the server continues with an empty rooms Map (the prior behavior).
+ */
+async function rehydrateRooms(): Promise<void> {
+  const data = await getJson(`/api/game?XTransformPort=3000&action=active`);
+  if (!data || data.success !== true || !Array.isArray(data.games)) {
+    console.warn("[REHYDRATE] no active rooms to recover (web API offline or malformed response)");
+    return;
+  }
+  const now = Date.now();
+  let recovered = 0;
+  for (const g of data.games as DbGameRow[]) {
+    // Skip zombie waiting rooms — they'd be reclaimed by the sweeper immediately.
+    if (g.status === "waiting" && g.createdAt) {
+      const age = now - new Date(g.createdAt).getTime();
+      if (age > WAITING_ROOM_TTL_MS) continue;
+    }
+    const board = safeParseJson(g.boardState);
+    if (!isValidBoardShape(board)) {
+      console.warn(`[REHYDRATE] skipping game ${g.code}: invalid board shape`);
+      continue;
+    }
+    const tileBag = safeParseJson(g.tileBagState);
+    if (!Array.isArray(tileBag)) {
+      console.warn(`[REHYDRATE] skipping game ${g.code}: invalid tileBag`);
+      continue;
+    }
+    // DB status → GamePhase. 'playing' is ambiguous (IN_PROGRESS or
+    // VALIDATION_PENDING); restore as IN_PROGRESS — a pending validation is
+    // lost across restart, the player can re-attempt the move.
+    const phase = g.status === "waiting" ? "WAITING_FOR_PLAYERS"
+      : g.status === "finished" ? "GAME_OVER"
+      : "IN_PROGRESS";
+    const dbPlayers = Array.isArray(g.players) ? [...g.players].sort((a, b) => a.joinOrder - b.joinOrder) : [];
+    const players = dbPlayers.map((p) => ({
+      id: p.id,
+      name: p.name,
+      score: p.score,
+      rack: safeParseRack(p.rack),
+      isHost: p.isHost,
+      isConnected: false, // they reconnect via game:rejoin
+      joinOrder: p.joinOrder,
+    }));
+    // gameId key: prefer serverGameId (the client's gameId) so rejoin finds the
+    // room; fall back to DB cuid (admin:list-rooms works, rejoin fails until
+    // host re-creates — acceptable for the small window between create and
+    // first sync).
+    const gameId = g.serverGameId ?? g.id;
+    const state: GameState = {
+      board,
+      players,
+      currentPlayerIndex: 0, // not persisted — restart from 0
+      tileBagCount: tileBag.length,
+      phase,
+      lastPlayedWord: null,
+      lastPlayedScore: 0,
+      consecutivePasses: 0, // not persisted — reset (may delay end-of-game by 2 rounds)
+      pendingValidationWord: null,
+      pendingValidationPlayerId: null,
+      pendingMoveData: null,
+      gameId,
+      gameCode: g.code,
+    };
+    const gameManager = new GameManager(gameId, g.code);
+    gameManager.loadState(state, tileBag);
+    const room: GameRoom = {
+      gameManager,
+      players: new Map(players.map((p) => [p.id, { socketId: null, name: p.name }])),
+      tileBagState: tileBag,
+      lastActivity: Date.now(), // not createdAt — so sweeper doesn't reclaim immediately
+    };
+    gameRooms.set(gameId, room);
+    codeIndex.set(g.code, gameId);
+    wireOnUpdate(gameId, room);
+    recovered++;
+  }
+  if (recovered > 0) {
+    console.log(`[REHYDRATE] recovered ${recovered} active room(s) from DB`);
+  } else {
+    console.log("[REHYDRATE] no active rooms to recover");
   }
 }
 
@@ -120,10 +437,50 @@ interface GameRoom {
 // ─── Server Setup ───────────────────────────────────────────────────────────
 const httpServer = createServer(handleHttp);
 const io = new Server(httpServer, {
-  cors: { origin: "*", methods: ["GET", "POST"] },
+  // CORS is locked to the web origin (and localhost:3000 for dev). We do
+  // NOT use origin: "*" — the admin panel relies on credentialed requests
+  // to carry its cookie, which requires an explicit origin.
+  cors: {
+    origin: ALLOWED_ORIGINS,
+    methods: ["GET", "POST"],
+    credentials: true,
+  },
   pingInterval: 15000,
   pingTimeout: 15000,
 });
+
+/**
+ * Socket-level auth middleware. Every connection may carry an admin token
+ * (via the `auth.token` handshake field or the `x-admin-token` header).
+ * We verify it against AUTH_SECRET and stash the result on socket.data.isAdmin
+ * so admin:* event handlers can guard themselves with requireAdmin().
+ *
+ * Verification failure is non-fatal: admin role is opt-in, gameplay sockets
+ * continue normally. When AUTH_SECRET is unset, every socket is non-admin.
+ */
+io.use((socket, next) => {
+  const token =
+    (socket.handshake.auth as { token?: unknown })?.token ??
+    socket.handshake.headers["x-admin-token"];
+  void (async () => {
+    const username = await isAdminToken(token);
+    socket.data.isAdmin = username !== null;
+    socket.data.adminUsername = username;
+    next();
+  })().catch(() => {
+    // Defensive: never block gameplay sockets because admin verification
+    // threw. Admin role is opt-in; non-admin sockets continue normally.
+    socket.data.isAdmin = false;
+    next();
+  });
+});
+
+/** Rejects an admin:* callback when the socket isn't authenticated. */
+function requireAdmin(socket: { data: { isAdmin?: boolean } }, cb: any): boolean {
+  if (socket.data?.isAdmin) return true;
+  cb?.({ success: false, error: "Acesso admin necessário" });
+  return false;
+}
 
 const gameRooms = new Map<string, GameRoom>();
 // O(1) lookup of gameId by user-facing code — avoids scanning every room on join.
@@ -170,6 +527,10 @@ function touch(room: GameRoom): void {
 function destroyRoom(gameId: string): void {
   const room = gameRooms.get(gameId);
   if (room) {
+    // Flush any pending mutation so the last state survives the destroy.
+    // (If no snapshot is pending, this is a no-op — empty/finished rooms have
+    // nothing worth persisting.)
+    flushPersist(gameId);
     for (const p of room.players.values()) if (p.disconnectTimer) clearTimeout(p.disconnectTimer);
     codeIndex.delete(room.gameManager.gameState.gameCode);
   }
@@ -293,6 +654,13 @@ io.on("connection", (socket) => {
     currentGameId = gameId;
     currentPlayerId = player.id;
     socket.join(gameId);
+
+    // Wire persist-on-mutation and seed the DB immediately with the initial
+    // state (including serverGameId) so a crash within the debounce window
+    // still leaves a recoverable row.
+    wireOnUpdate(gameId, room);
+    persistFullState(gameId);
+    flushPersist(gameId);
 
     callback?.({ success: true, gameId, gameCode, playerId: player.id, playerName: player.name, isHost: true });
     broadcastPlayerList(room, gameId);
@@ -440,6 +808,8 @@ io.on("connection", (socket) => {
         if (room.gameManager.gameState.phase === "GAME_OVER") {
           const winner = room.gameManager.getWinner();
           persistGame("end", { gameCode: room.gameManager.gameState.gameCode, winnerId: winner?.id || "", winnerName: winner?.name || "" });
+          // Flush the final board state immediately (don't wait for debounce).
+          flushPersist(data.gameId);
         }
         callback?.({ success: true, score: validation.score, words: validation.words });
         break;
@@ -591,6 +961,7 @@ io.on("connection", (socket) => {
 
   // ─── Admin: List Rooms ──────────────────────────────────────────────────
   socket.on("admin:list-rooms", (callback) => {
+    if (!requireAdmin(socket, callback)) return;
     const rooms = Array.from(gameRooms.entries()).map(([id, room]) => {
       const state = room.gameManager.gameState;
       return {
@@ -608,11 +979,13 @@ io.on("connection", (socket) => {
 
   // ─── Admin: Approve / Ban Word (persisted) ────────────────────────────────
   socket.on("admin:approve-word", (data: { word: string }, callback) => {
+    if (!requireAdmin(socket, callback)) return;
     const word = sanitizeText(data?.word, 30);
     if (word) { dictionary.addApprovedWord(word, "admin"); persistWord(word, "approve"); }
     callback?.({ success: true });
   });
   socket.on("admin:ban-word", (data: { word: string }, callback) => {
+    if (!requireAdmin(socket, callback)) return;
     const word = sanitizeText(data?.word, 30);
     if (word) { dictionary.banWord(word); persistWord(word, "ban"); }
     callback?.({ success: true });
@@ -622,6 +995,7 @@ io.on("connection", (socket) => {
 // ─── Start Server ───────────────────────────────────────────────────────────
 async function main() {
   await loadDictionaryFromDb();
+  await rehydrateRooms();
   await maybeAttachRedis();
   httpServer.listen(PORT, () => {
     console.log(`🎮 LetraMestre Game Server running on port ${PORT}`);

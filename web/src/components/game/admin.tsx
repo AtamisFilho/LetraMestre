@@ -17,7 +17,6 @@ import {
 import { toast } from 'sonner';
 
 interface AdminState {
-  isLoggedIn: boolean;
   stats: any;
   approvedWords: any[];
   bannedWords: any[];
@@ -25,6 +24,21 @@ interface AdminState {
   topMoves: any[];
   rooms: any[];
   wordFilter: string;
+}
+
+// Admin token lives only in memory for the lifetime of the AdminPanel mount.
+// It is NOT persisted to localStorage (localStorage is bypassable and
+// survives logout). The cookie set by /api/admin is HttpOnly+SameSite=Strict
+// and is sent automatically with `credentials: 'same-origin'` requests.
+let adminToken: string | null = null;
+
+async function bounceToLoginOn401(res: Response): Promise<Response> {
+  if (res.status === 401) {
+    adminToken = null;
+    useGameStore.setState({ screen: 'admin-login' } as any);
+    toast.error('Sessão expirada. Faça login novamente.');
+  }
+  return res;
 }
 
 export function AdminLoginScreen() {
@@ -43,7 +57,9 @@ export function AdminLoginScreen() {
       });
       const data = await res.json();
       if (data.success) {
-        localStorage.setItem('adminAuth', 'true');
+        // Token is kept in memory only; the HttpOnly cookie is the real
+        // session bearer. We don't store anything in localStorage.
+        adminToken = (data as { token?: string }).token ?? null;
         useGameStore.setState({ screen: 'admin' } as any);
         toast.success('Login realizado!');
       } else {
@@ -67,16 +83,13 @@ export function AdminLoginScreen() {
         <CardContent className="space-y-4">
           <div>
             <label className="text-sm font-medium mb-1 block">Usuário</label>
-            <Input value={username} onChange={(e) => setUsername(e.target.value)} placeholder="admin" />
+            <Input value={username} onChange={(e) => setUsername(e.target.value)} placeholder="usuário" />
           </div>
           <div>
             <label className="text-sm font-medium mb-1 block">Senha</label>
             <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••" 
               onKeyDown={(e) => e.key === 'Enter' && handleLogin()} />
           </div>
-          <p className="text-xs text-muted-foreground text-center">
-            Padrão: admin / letramestre
-          </p>
           <Button onClick={handleLogin} disabled={loading || !username || !password} className="w-full">
             {loading ? <RefreshCw className="mr-2 h-4 w-4 animate-spin" /> : <Shield className="mr-2 h-4 w-4" />}
             Entrar
@@ -93,7 +106,6 @@ export function AdminLoginScreen() {
 export function AdminPanel() {
   const { setScreen } = useGameStore();
   const [state, setState] = useState<AdminState>({
-    isLoggedIn: true,
     stats: null,
     approvedWords: [],
     bannedWords: [],
@@ -108,7 +120,7 @@ export function AdminPanel() {
 
   const fetchStats = useCallback(async () => {
     try {
-      const res = await fetch('/api/stats');
+      const res = await bounceToLoginOn401(await fetch('/api/stats', { credentials: 'same-origin' }));
       const data = await res.json();
       setState(s => ({ ...s, stats: data, recentGames: data.recentGames || [], topMoves: data.topMoves || [] }));
     } catch (err) {
@@ -118,7 +130,7 @@ export function AdminPanel() {
 
   const fetchWords = useCallback(async () => {
     try {
-      const res = await fetch('/api/words');
+      const res = await bounceToLoginOn401(await fetch('/api/words', { credentials: 'same-origin' }));
       const data = await res.json();
       setState(s => ({ ...s, approvedWords: data.approved || [], bannedWords: data.banned || [] }));
     } catch (err) {
@@ -128,17 +140,27 @@ export function AdminPanel() {
 
   const fetchRooms = useCallback(async () => {
     try {
-      // Fetch rooms from game server via Socket.io
+      // Connect to the game-server with the admin token so the socket-level
+      // requireAdmin() guard accepts us. The token comes from POST /api/admin.
       const { io } = await import('socket.io-client');
       const socket = io('/', {
         transports: ['websocket'],
         query: { XTransformPort: '3003' },
+        withCredentials: true,
+        auth: { token: adminToken },
       });
       socket.on('connect', () => {
-        socket.emit('admin:list-rooms', (rooms: any[]) => {
-          setState(s => ({ ...s, rooms }));
+        socket.emit('admin:list-rooms', (rooms: unknown) => {
+          setState(s => ({ ...s, rooms: Array.isArray(rooms) ? rooms : [] }));
           socket.disconnect();
         });
+      });
+      socket.on('connect_error', () => {
+        // Likely 401 (admin token missing/invalid) — bounce to login.
+        adminToken = null;
+        useGameStore.setState({ screen: 'admin-login' } as any);
+        toast.error('Sessão admin expirada.');
+        socket.disconnect();
       });
     } catch (err) {
       console.error('Failed to fetch rooms');
@@ -155,11 +177,12 @@ export function AdminPanel() {
   const handleWordAction = async () => {
     if (!newWord.trim()) return;
     try {
-      const res = await fetch('/api/words', {
+      const res = await bounceToLoginOn401(await fetch('/api/words', {
         method: 'POST',
+        credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ word: newWord, action: wordAction }),
-      });
+      }));
       const data = await res.json();
       if (data.success) {
         toast.success(`Palavra ${wordAction === 'approve' ? 'aprovada' : 'banida'}!`);
@@ -175,11 +198,12 @@ export function AdminPanel() {
 
   const handleDeleteWord = async (word: string) => {
     try {
-      await fetch('/api/words', {
+      await bounceToLoginOn401(await fetch('/api/words', {
         method: 'POST',
+        credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ word, action: 'delete' }),
-      });
+      }));
       toast.success('Palavra removida');
       fetchWords();
     } catch (err) {

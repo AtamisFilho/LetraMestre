@@ -21,6 +21,7 @@ model Game {
   status        String   @default("waiting") // waiting, playing, finished
   hostId        String
   hostName      String
+  serverGameId  String?  @unique // game-server internal gameId (for rehydrate/rejoin)
   winnerId      String?
   winnerName    String?
   boardState    String   @default("{}") // JSON
@@ -33,6 +34,8 @@ model Game {
   players       Player[]
   moves         Move[]
   chatMessages  ChatMessage[]
+
+  @@index([status])
 }
 
 model Player {
@@ -48,6 +51,8 @@ model Player {
   updatedAt   DateTime @updatedAt
   game        Game     @relation(fields: [gameId], references: [id], onDelete: Cascade)
   moves       Move[]
+
+  @@index([gameId])
 }
 
 model Move {
@@ -62,6 +67,10 @@ model Move {
   createdAt   DateTime @default(now())
   game        Game     @relation(fields: [gameId], references: [id], onDelete: Cascade)
   player      Player   @relation(fields: [playerId], references: [id], onDelete: Cascade)
+
+  @@index([gameId])
+  @@index([playerId])
+  @@index([moveType])
 }
 
 model ChatMessage {
@@ -73,6 +82,8 @@ model ChatMessage {
   type      String   @default("chat") // chat, system
   createdAt DateTime @default(now())
   game      Game     @relation(fields: [gameId], references: [id], onDelete: Cascade)
+
+  @@index([gameId])
 }
 
 model ApprovedWord {

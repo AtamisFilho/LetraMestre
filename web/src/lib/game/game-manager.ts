@@ -41,7 +41,14 @@ export class GameManager {
 
   private updateState(newState: GameState): void {
     this._gameState = newState;
-    this.onUpdate?.(newState);
+    // Persistence/realtime fan-out is best-effort: a thrown error in the
+    // onUpdate callback (e.g. dead socket, transient DB hiccup) must NOT
+    // roll back the already-applied game state. Log and swallow.
+    try {
+      this.onUpdate?.(newState);
+    } catch (err) {
+      console.error('[GameManager] onUpdate callback threw; state already applied.', err);
+    }
   }
 
   addPlayer(name: string): Player {
@@ -93,6 +100,27 @@ export class GameManager {
 
   validateMove(moveData: MoveData): MoveValidation {
     const state = this._gameState;
+
+    // ─── Phase gate ───────────────────────────────────────────────────────
+    // Moves are only legal during IN_PROGRESS. During VALIDATION_PENDING we
+    // only allow re-validating the EXACT pending move (by reference), which
+    // is what approveWord does after the admin lets an unknown word through.
+    // A fresh move during VALIDATION_PENDING would silently overwrite the
+    // pending one and corrupt the board's "newly placed" tiles.
+    if (state.phase === 'GAME_OVER') {
+      return { type: 'InvalidPlacement', reason: 'Partida encerrada' };
+    }
+    if (state.phase === 'WAITING_FOR_PLAYERS') {
+      return { type: 'InvalidPlacement', reason: 'Partida ainda não começou' };
+    }
+    if (state.phase === 'VALIDATION_PENDING') {
+      if (moveData !== state.pendingMoveData) {
+        return { type: 'InvalidPlacement', reason: 'Aguardando validação de palavra' };
+      }
+      // Fall through: the same pending move is being re-validated (admin
+      // approved the word). No further checks needed — they passed before.
+    }
+
     const player = state.players.find(p => p.id === moveData.playerId);
     if (!player) return { type: 'InvalidPlacement', reason: 'Jogador não encontrado' };
 
@@ -103,6 +131,30 @@ export class GameManager {
 
     if (moveData.placements.length === 0) {
       return { type: 'InvalidPlacement', reason: 'Nenhuma peça colocada' };
+    }
+
+    // ─── Rack integrity ───────────────────────────────────────────────────
+    // Each placement must reference a real tile in the player's rack. We
+    // check: integer rackIndex, in-range, that the tile at that slot has the
+    // same id as the placement's tile (defeats phantom-tile and cross-rack
+    // swap cheats), and that no rackIndex is reused (a single physical tile
+    // can't be spent in two cells).
+    const seenRackIndices = new Set<number>();
+    for (const placement of moveData.placements) {
+      if (!Number.isInteger(placement.rackIndex)) {
+        return { type: 'InvalidPlacement', reason: 'Índice de rack inválido' };
+      }
+      if (placement.rackIndex < 0 || placement.rackIndex >= player.rack.length) {
+        return { type: 'InvalidPlacement', reason: 'Peça fora do rack' };
+      }
+      const rackTile = player.rack[placement.rackIndex];
+      if (!rackTile || rackTile.id !== placement.tile.id) {
+        return { type: 'InvalidPlacement', reason: 'Peça não corresponde ao rack' };
+      }
+      if (seenRackIndices.has(placement.rackIndex)) {
+        return { type: 'InvalidPlacement', reason: 'Peça do rack reutilizada' };
+      }
+      seenRackIndices.add(placement.rackIndex);
     }
 
     if (!isValidLine(moveData)) {
@@ -162,6 +214,11 @@ export class GameManager {
 
   processValidMove(moveData: MoveData, score: number): GameState {
     const state = this._gameState;
+    // Phase guard: a move applied outside IN_PROGRESS/VALIDATION_PENDING
+    // would advance the turn after GAME_OVER or during WAITING_FOR_PLAYERS.
+    if (state.phase !== 'IN_PROGRESS' && state.phase !== 'VALIDATION_PENDING') {
+      return state;
+    }
     const playerIndex = state.players.findIndex(p => p.id === moveData.playerId);
     if (playerIndex === -1) return state;
     const player = state.players[playerIndex];
@@ -185,8 +242,14 @@ export class GameManager {
     const newPlayers = [...state.players];
     newPlayers[playerIndex] = updatedPlayer;
 
-    const lastWord = moveData.placements.length > 0
-      ? moveData.placements.map(p => p.tile.isBlank ? (p.tile.assignedLetter || '?') : p.tile.letter).join('')
+    // Build lastPlayedWord in board order (top-to-bottom, left-to-right)
+    // rather than in the order the client happened to send. Without this,
+    // a horizontal CASA placed right-to-left would be announced as "ASAC".
+    const sortedPlacements = [...moveData.placements].sort(
+      (a, b) => a.row - b.row || a.col - b.col,
+    );
+    const lastWord = sortedPlacements.length > 0
+      ? sortedPlacements.map(p => p.tile.isBlank ? (p.tile.assignedLetter || '?') : p.tile.letter).join('')
       : null;
 
     let newState: GameState = {
@@ -211,6 +274,9 @@ export class GameManager {
 
   passTurn(playerId: string): GameState {
     const state = this._gameState;
+    // Phase guard: passing during WAITING_FOR_PLAYERS or GAME_OVER would
+    // either start the game prematurely or revive a finished one.
+    if (state.phase !== 'IN_PROGRESS') return state;
     const currentPlayer = state.players[state.currentPlayerIndex];
     if (currentPlayer?.id !== playerId) return state;
 
@@ -230,6 +296,9 @@ export class GameManager {
 
   exchangeTiles(playerId: string, indices: number[]): GameState {
     const state = this._gameState;
+    // Phase guard: exchanging during WAITING_FOR_PLAYERS (no rack dealt yet)
+    // or GAME_OVER would corrupt state.
+    if (state.phase !== 'IN_PROGRESS') return state;
     const playerIndex = state.players.findIndex(p => p.id === playerId);
     if (playerIndex === -1) return state;
     const player = state.players[playerIndex];
@@ -237,11 +306,20 @@ export class GameManager {
     const currentPlayer = state.players[state.currentPlayerIndex];
     if (currentPlayer?.id !== playerId) return state;
 
-    if (this.tileBag.remainingCount() < indices.length) return state;
+    // Dedupe indices: exchanging [0,0,0] would push 3 refs to the SAME tile
+    // into the bag (duplication) and overflow the rack to 9 tiles on draw.
+    const uniqueIndices = [...new Set(indices)];
+    // Range-validate each index and require an integer.
+    for (const idx of uniqueIndices) {
+      if (!Number.isInteger(idx) || idx < 0 || idx >= player.rack.length) return state;
+    }
+    // Empty exchange is a no-op that should NOT burn the player's turn.
+    if (uniqueIndices.length === 0) return state;
+    if (this.tileBag.remainingCount() < uniqueIndices.length) return state;
 
-    const tilesToReturn = indices.map(i => player.rack[i]).filter(Boolean);
-    const newRack = player.rack.filter((_, i) => !indices.includes(i));
-    const drawnTiles = this.tileBag.draw(indices.length);
+    const tilesToReturn = uniqueIndices.map(i => player.rack[i]).filter(Boolean);
+    const newRack = player.rack.filter((_, i) => !uniqueIndices.includes(i));
+    const drawnTiles = this.tileBag.draw(uniqueIndices.length);
     this.tileBag.returnTiles(tilesToReturn);
 
     const updatedPlayer: Player = {
@@ -396,7 +474,13 @@ export class GameManager {
     return {
       ...state,
       players: state.players.map(player => {
-        if (player.id === playerId) return player;
+        if (player.id === playerId) {
+          // Defensive copy of the requesting player's rack: callers mutate
+          // the returned state (e.g. optimistic tile placement on the
+          // client), and sharing the live array would leak those mutations
+          // back into the authoritative game state.
+          return { ...player, rack: [...player.rack] };
+        }
         return { ...player, rack: [] }; // Hide other players' racks
       })
     };

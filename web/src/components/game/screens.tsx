@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Separator } from '@/components/ui/separator';
 import { useState, useEffect, useCallback } from 'react';
+import { useShallow } from 'zustand/react/shallow';
 import { createGame, joinGame, startGame, setupGameListeners, removeGameListeners, connectSocket, passTurn, exchangeTiles, submitMove, approveWord, sendChatMessage, disconnectSocket, rejoinGame, onReconnect } from '@/lib/game/socket-client';
 import { BoardView } from './board';
 import { RackView } from './rack';
@@ -25,7 +26,13 @@ import { toast } from 'sonner';
 
 // ─── Home Screen ──────────────────────────────────────────────────────────────
 export function HomeScreen() {
-  const { setScreen, playerName, setPlayerName } = useGameStore();
+  const { setScreen, playerName, setPlayerName } = useGameStore(
+    useShallow((s) => ({
+      setScreen: s.setScreen,
+      playerName: s.playerName,
+      setPlayerName: s.setPlayerName,
+    }))
+  );
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center p-4 bg-gradient-to-br from-green-700 via-green-600 to-emerald-800">
@@ -94,7 +101,14 @@ export function HomeScreen() {
 
 // ─── Create Game Screen ───────────────────────────────────────────────────────
 export function CreateGameScreen() {
-  const { playerName, setScreen, setGameInfo, setConnected } = useGameStore();
+  const { playerName, setScreen, setGameInfo, setConnected } = useGameStore(
+    useShallow((s) => ({
+      playerName: s.playerName,
+      setScreen: s.setScreen,
+      setGameInfo: s.setGameInfo,
+      setConnected: s.setConnected,
+    }))
+  );
   const [loading, setLoading] = useState(false);
 
   const handleCreate = async () => {
@@ -158,7 +172,14 @@ export function CreateGameScreen() {
 
 // ─── Join Game Screen ─────────────────────────────────────────────────────────
 export function JoinGameScreen() {
-  const { playerName, setScreen, setGameInfo, setConnected } = useGameStore();
+  const { playerName, setScreen, setGameInfo, setConnected } = useGameStore(
+    useShallow((s) => ({
+      playerName: s.playerName,
+      setScreen: s.setScreen,
+      setGameInfo: s.setGameInfo,
+      setConnected: s.setConnected,
+    }))
+  );
   const [gameCode, setGameCode] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -234,7 +255,16 @@ export function JoinGameScreen() {
 
 // ─── Lobby Screen ─────────────────────────────────────────────────────────────
 export function LobbyScreen() {
-  const { gameCode, isHost, playerList, gameId, playerId, setScreen } = useGameStore();
+  const { gameCode, isHost, playerList, gameId, playerId, setScreen } = useGameStore(
+    useShallow((s) => ({
+      gameCode: s.gameCode,
+      isHost: s.isHost,
+      playerList: s.playerList,
+      gameId: s.gameId,
+      playerId: s.playerId,
+      setScreen: s.setScreen,
+    }))
+  );
   const [starting, setStarting] = useState(false);
 
   useEffect(() => {
@@ -336,14 +366,42 @@ export function LobbyScreen() {
 
 // ─── Game Screen ───────────────────────────────────────────────────────────────
 export function GameScreen() {
-  const store = useGameStore();
+  // Granular selector: only re-render this screen when one of these specific
+  // fields changes. Avoids the catastrophic over-subscription where every
+  // chat message / connection flag / error toggle re-rendered the entire
+  // GameScreen (and indirectly BoardView, ScoreBoard, RackView, ChatPanel).
   const {
     gameState, playerId, isHost, gameId, gameCode, selectedTileIndices,
-    toggleTileSelection, clearSelection, placedTiles, addPlacedTile, 
+    toggleTileSelection, clearSelection, placedTiles, addPlacedTile,
     removePlacedTile, clearPlacedTiles, placingTileIndex, setPlacingTileIndex,
-    pendingWord, setPendingWord, gameOverData, setGameOverData, 
+    pendingWord, setPendingWord, gameOverData, setGameOverData,
     addChatMessage, setScreen, setError, lastError
-  } = store;
+  } = useGameStore(
+    useShallow((s) => ({
+      gameState: s.gameState,
+      playerId: s.playerId,
+      isHost: s.isHost,
+      gameId: s.gameId,
+      gameCode: s.gameCode,
+      selectedTileIndices: s.selectedTileIndices,
+      toggleTileSelection: s.toggleTileSelection,
+      clearSelection: s.clearSelection,
+      placedTiles: s.placedTiles,
+      addPlacedTile: s.addPlacedTile,
+      removePlacedTile: s.removePlacedTile,
+      clearPlacedTiles: s.clearPlacedTiles,
+      placingTileIndex: s.placingTileIndex,
+      setPlacingTileIndex: s.setPlacingTileIndex,
+      pendingWord: s.pendingWord,
+      setPendingWord: s.setPendingWord,
+      gameOverData: s.gameOverData,
+      setGameOverData: s.setGameOverData,
+      addChatMessage: s.addChatMessage,
+      setScreen: s.setScreen,
+      setError: s.setError,
+      lastError: s.lastError,
+    }))
+  );
 
   const [showChat, setShowChat] = useState(false);
   const [showExchange, setShowExchange] = useState(false);
@@ -522,7 +580,12 @@ export function GameScreen() {
       <ScoreBoard players={gameState.players} currentPlayerId={currentPlayer?.id} myPlayerId={playerId} />
 
       {/* Turn indicator */}
-      <div className={`px-3 py-1.5 text-center text-sm font-medium ${isMyTurn ? 'bg-amber-500 text-white' : 'bg-muted text-muted-foreground'}`}>
+      <div
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+        className={`px-3 py-1.5 text-center text-sm font-medium ${isMyTurn ? 'bg-amber-500 text-white' : 'bg-muted text-muted-foreground'}`}
+      >
         {isMyTurn ? (
           <span className="flex items-center justify-center gap-1">
             <Sparkles size={14} /> Sua vez de jogar!
@@ -585,7 +648,11 @@ export function GameScreen() {
 
       {/* Last move info */}
       {gameState.lastPlayedWord && (
-        <div className="text-center text-xs text-muted-foreground pb-2">
+        <div
+          role="status"
+          aria-live="polite"
+          className="text-center text-xs text-muted-foreground pb-2"
+        >
           Última jogada: &quot;{gameState.lastPlayedWord}&quot; (+{gameState.lastPlayedScore} pts)
         </div>
       )}

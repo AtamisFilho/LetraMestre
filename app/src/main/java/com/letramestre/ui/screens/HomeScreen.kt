@@ -8,10 +8,12 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.letramestre.data.Dictionary
 import com.letramestre.ui.theme.*
 
 /**
@@ -23,6 +25,16 @@ fun HomeScreen(
     onClientClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    // Carrega o dicionário (idempotente — chamadas repetidas são no-ops).
+    // O `applicationContext` evita leaks da Activity. O `LaunchedEffect(Unit)`
+    // roda uma vez quando a HomeScreen entra em composição; como HomeScreen é
+    // a primeira tela do app, o dicionário está pronto antes de qualquer
+    // uso em GameManager (instanciado pelo GameViewModel ao navegar).
+    val context = LocalContext.current
+    LaunchedEffect(Unit) {
+        Dictionary.initialize(context.applicationContext)
+    }
+
     Box(
         modifier = modifier
             .fillMaxSize()

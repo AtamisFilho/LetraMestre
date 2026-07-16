@@ -15,10 +15,10 @@ const geistMono = Geist_Mono({
 });
 
 export const viewport: Viewport = {
+  // WCAG 1.4.4 (Resize text): do not disable user zoom. Removed
+  // maximumScale=1 / userScalable=false that were here previously.
   width: "device-width",
   initialScale: 1,
-  maximumScale: 1,
-  userScalable: false,
   themeColor: "#4CAF50",
 };
 

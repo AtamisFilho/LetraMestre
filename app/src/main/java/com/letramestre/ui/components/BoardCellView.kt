@@ -10,6 +10,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
@@ -21,6 +25,17 @@ import com.letramestre.ui.theme.*
 
 /**
  * Componente visual para uma célula do tabuleiro.
+ *
+ * Acessibilidade (TalkBack): cada célula é anunciada como um botão com um
+ * rótulo descritivo em pt-BR (1-indexado) construído por
+ * [buildAccessibilityLabel]. O `mergeDescendants = true` funde os rótulos dos
+ * filhos (Text do bônus, TileView) na célula para que o TalkBack não
+ * anuncie "caixa" 225 vezes nem a letra solta sem contexto.
+ *
+ * Nota sobre touch target: a grade 15×15 restringe o `cellSize` a ~22-25dp
+ * em telas de celular; expandir para 48dp quebraria o layout. O `Role.Button`
+ * garante navegação por toque no TalkBack; o `contentDescription` supre a
+ * leitura. Esta limitação é inerente a tabuleiros compactos.
  */
 @Composable
 fun BoardCellView(
@@ -33,13 +48,17 @@ fun BoardCellView(
         cell.tile != null -> TileBackground
         else -> getCellBonusColor(cell.bonus)
     }
-    
+
     Box(
         modifier = modifier
             .size(cellSize)
             .background(bgColor)
             .border(0.5.dp, Color.Gray.copy(alpha = 0.3f))
-            .clickable { onClick() },
+            .clickable { onClick() }
+            .semantics(mergeDescendants = true) {
+                role = Role.Button
+                contentDescription = buildAccessibilityLabel(cell)
+            },
         contentAlignment = Alignment.Center
     ) {
         if (cell.tile != null) {
@@ -58,6 +77,38 @@ fun BoardCellView(
             )
         }
     }
+}
+
+/**
+ * Constrói o rótulo de acessibilidade em pt-BR (1-indexado) para uma célula.
+ *  - Com peça: "linha L, coluna C, peça <letra>, valor <v>"
+ *    (ou "linha L, coluna C, curinga" / "curinga atribuída X" para blanks).
+ *  - Vazia com bônus: "linha L, coluna C, Centro" | "Letra dupla" | ...
+ *  - Vazia sem bônus: "linha L, coluna C, vazia".
+ */
+private fun buildAccessibilityLabel(cell: BoardCell): String {
+    val linha = cell.row + 1
+    val coluna = cell.col + 1
+    val tile = cell.tile
+    if (tile != null) {
+        val peca = if (tile.isBlank) {
+            if (tile.assignedLetter != null) "curinga atribuída ${tile.assignedLetter}"
+            else "curinga"
+        } else {
+            "peça ${tile.letter}, valor ${tile.value}"
+        }
+        return "linha $linha, coluna $coluna, $peca"
+    }
+    val bonus = when (cell.bonus) {
+        CellBonus.CENTER -> "Centro"
+        CellBonus.DOUBLE_LETTER -> "Letra dupla"
+        CellBonus.TRIPLE_LETTER -> "Letra tripla"
+        CellBonus.DOUBLE_WORD -> "Palavra dupla"
+        CellBonus.TRIPLE_WORD -> "Palavra tripla"
+        CellBonus.NONE -> null
+    }
+    return if (bonus != null) "linha $linha, coluna $coluna, $bonus"
+    else "linha $linha, coluna $coluna, vazia"
 }
 
 @Composable

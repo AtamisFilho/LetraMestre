@@ -29,8 +29,11 @@ fun ConnectionScreen(
     onBack: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    var playerName by remember { mutableStateOf("") }
-    var ipAddress by remember { mutableStateOf("") }
+    // rememberSaveable preserva os valores digitados em rotação (Activity é
+    // recriada mas o estado salvo é restaurado). String é parcelável por
+    // padrão via autoSaver.
+    var playerName by rememberSaveable { mutableStateOf("") }
+    var ipAddress by rememberSaveable { mutableStateOf("") }
     
     Box(
         modifier = modifier
