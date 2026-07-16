@@ -1,0 +1,100 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Post {
+  id        String   @id @default(cuid())
+  title     String
+  content   String?
+  published Boolean  @default(false)
+  authorId  String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ============================================================
+// LetraMestre — Console de Operações (Fase 0)
+// Modelos adicionados pelo Agente A (Backend / Task 1)
+// ============================================================
+
+model BackupRecord {
+  id          String    @id @default(cuid())
+  filename    String    @unique
+  path        String
+  sizeBytes   Int
+  durationMs  Int       @default(0)
+  verified    Boolean   @default(false)
+  verifiedAt  DateTime?
+  createdAt   DateTime  @default(now())
+}
+
+model ReleaseRecord {
+  id         String   @id @default(cuid())
+  version    String   @unique
+  tag        String   @unique
+  type       String // major, minor, patch
+  notes      String   @default("")
+  releasedBy String   @default("Tech Lead")
+  createdAt  DateTime @default(now())
+}
+
+model TechDebtItem {
+  id          String    @id @default(cuid())
+  title       String
+  area        String // database, frontend, backend, infra, security, test
+  severity    String // low, medium, high
+  status      String    @default("open") // open, closed
+  file        String?
+  description String    @default("")
+  resolution  String?
+  createdAt   DateTime  @default(now())
+  closedAt    DateTime?
+
+  @@index([status])
+  @@index([severity])
+}
+
+model MetricSnapshot {
+  id                String   @id @default(cuid())
+  capturedAt        DateTime @default(now())
+  source            String   @default("simulated") // live, simulated
+  activeRooms       Int      @default(0)
+  activeConnections Int      @default(0)
+  memoryMb          Int      @default(0)
+  heapMb            Int      @default(0)
+  cpuLoad           Float    @default(0)
+
+  @@index([capturedAt])
+}
+
+model BuildValidation {
+  id              String    @id @default(cuid())
+  status          String // pass, fail, blocked, pending
+  configValid     Boolean   @default(false)
+  gradleWrapperOk Boolean   @default(false)
+  androidSdkOk    Boolean   @default(false)
+  artifact        String?
+  log             String    @default("")
+  blocker         String?
+  durationMs      Int       @default(0)
+  runAt           DateTime  @default(now())
+}

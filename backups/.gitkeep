@@ -1,0 +1,2 @@
+# Mantém o diretório backups/ no repositório. Os arquivos .db reais ficam
+# fora de versionamento (.gitignore no Agente C/Docs).
