@@ -63,7 +63,10 @@ describe("persist-adversarial: loadState + getTileBagState", () => {
       gameId: "g", gameCode: "C",
     };
     gm.loadState(state, bag);
-    expect(gm.gameState).toBe(state); // same reference (loadState sets directly)
+    // loadState recomputes tileBagCount from the actual bag, so the state is
+    // a NEW object (not the same reference) with the correct count.
+    expect(gm.gameState).toEqual(state); // deep equality
+    expect(gm.gameState.tileBagCount).toBe(3);
     expect(gm.getTileBagState().length).toBe(3);
   });
 
@@ -78,7 +81,9 @@ describe("persist-adversarial: loadState + getTileBagState", () => {
   it("loadState with empty bag: getTileBagState returns []", () => {
     const gm = makeGame({ tileBag: [] });
     expect(gm.getTileBagState()).toEqual([]);
-    expect(gm.gameState.tileBagCount).toBe(100); // tileBagCount is set by the state, not derived
+    // loadState recomputes tileBagCount from the actual bag, so an empty bag
+    // means tileBagCount=0 (not the stale 100 from the state template).
+    expect(gm.gameState.tileBagCount).toBe(0);
   });
 
   it("loadState defensive copy: mutating the input tileBag array doesn't affect the bag", () => {

@@ -141,6 +141,16 @@ export class GameManager {
     // can't be spent in two cells).
     const seenRackIndices = new Set<number>();
     for (const placement of moveData.placements) {
+      // Bounds check: reject out-of-bounds row/col early. Without this, a
+      // placement at row=15 is silently dropped by withTilePlaced (which
+      // maps over cells 0..14) and getCell returns null, so the occupied-cell
+      // check passes — the tile vanishes from the rack without landing on
+      // the board.
+      if (!Number.isInteger(placement.row) || !Number.isInteger(placement.col) ||
+          placement.row < 0 || placement.row >= SIZE ||
+          placement.col < 0 || placement.col >= SIZE) {
+        return { type: 'InvalidPlacement', reason: 'Posição fora do tabuleiro' };
+      }
       if (!Number.isInteger(placement.rackIndex)) {
         return { type: 'InvalidPlacement', reason: 'Índice de rack inválido' };
       }
@@ -148,7 +158,17 @@ export class GameManager {
         return { type: 'InvalidPlacement', reason: 'Peça fora do rack' };
       }
       const rackTile = player.rack[placement.rackIndex];
-      if (!rackTile || rackTile.id !== placement.tile.id) {
+      // Anti-cheat: verify the ENTIRE tile object matches the server's rack
+      // tile, not just the id. A client that mutates the letter (e.g. turns
+      // an "A" into a "Q") while keeping the same id would bypass an id-only
+      // check and effectively forge a letter. We compare letter, value, and
+      // isBlank; assignedLetter is client-chosen for blanks so we allow it
+      // to differ (the server stores whatever the client assigns).
+      if (!rackTile ||
+          rackTile.id !== placement.tile.id ||
+          rackTile.letter !== placement.tile.letter ||
+          rackTile.value !== placement.tile.value ||
+          rackTile.isBlank !== placement.tile.isBlank) {
         return { type: 'InvalidPlacement', reason: 'Peça não corresponde ao rack' };
       }
       if (seenRackIndices.has(placement.rackIndex)) {
@@ -223,10 +243,14 @@ export class GameManager {
     if (playerIndex === -1) return state;
     const player = state.players[playerIndex];
 
-    // Place tiles on board
+    // Place tiles on board. Use the SERVER-trusted rack tile (not the
+    // client-sent placement.tile) so that even if validateMove is bypassed
+    // or a race mutates the tile between validation and placement, the board
+    // always reflects what's actually in the player's rack.
     let newBoard = state.board;
     for (const placement of moveData.placements) {
-      newBoard = withTilePlaced(newBoard, placement.row, placement.col, placement.tile, false);
+      const rackTile = player.rack[placement.rackIndex];
+      newBoard = withTilePlaced(newBoard, placement.row, placement.col, rackTile, false);
     }
 
     // Update player's rack
@@ -488,7 +512,9 @@ export class GameManager {
 
   loadState(state: GameState, tileBagState: Tile[]): void {
     this.tileBag.loadState(tileBagState);
-    this._gameState = state;
+    // Recompute tileBagCount from the actual bag so the state field can never
+    // diverge from reality (a caller could pass a state with a stale count).
+    this._gameState = { ...state, tileBagCount: this.tileBag.remainingCount() };
   }
 
   getTileBagState(): Tile[] {
