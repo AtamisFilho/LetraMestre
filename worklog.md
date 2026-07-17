@@ -589,3 +589,28 @@ Stage Summary:
 - Lint: 0 errors, 0 warnings. Dev server: 12 endpoints consumidos respondendo 200/201. Agent Browser: 20 screenshots, todos os fluxos (registro, login, logout, edição, forgot/reset, Google demo, simular partida, troca de modo) funcionando E2E, sem erros no console.
 - Pendências: nenhuma crítica de frontend. Sugestão ao backend (Agente D): expor `provider` explicitamente no `/me` (hoje derivado de `googleLinked`) e/ou alinhar o formato ao contrato (`stats` aninhado) — o frontend já tolera ambos os formatos via `normalizePlayerMe`.
 
+
+---
+Task ID: 9 (Integração & Verificação Fase 1)
+Agent: Coordenador (Z.ai Code)
+Task: Integrar o trabalho dos 3 especialistas da Fase 1, validar Prisma client, lint, verificação E2E com Agent Browser, commit.
+
+Work Log:
+- Dev server Next.js (porta 3000) saudável após db:push; todas as rotas /api/auth/player/*, /api/player/*, /api/ops/phase1/* respondendo 200.
+- `bun run lint` → 0 errors, 0 warnings.
+- Mini-serviço metrics-emitter (porta 3004) permanece ativo da Fase 0.
+- Verificação Agent Browser na rota `/`:
+  - Seletor de modo Operações/Jogador no header funcional.
+  - Modo Jogador: tabs Entrar/Criar conta, campos validados, botão Google (demo).
+  - Registro de novo jogador `verificador@letramestre.app` → perfil criado com avatar DiceBear, bio placeholder, stats zeradas.
+  - 3 partidas simuladas → stats atualizadas (3 partidas, 588 pts, melhor 275), histórico de partidas vinculado à conta.
+  - Modo Operações: 9ª seção "Contas de jogador (Fase 1)" renderiza progresso M1 (95%), critérios de saída e tabela de jogadores incluindo o recém-cadastrado.
+  - Console sem erros/warnings durante todo o fluxo.
+- Commit Fase 1: `e38fdc5` (46 arquivos: 25 novos, 21 modificados).
+- Push para origin (github.com/AtamisFilho/LetraMestre): FALHA — sandbox sem credenciais GitHub (sem gh, sem token, sem SSH, sem netrc). Commits ficam locais.
+
+Stage Summary:
+- Fase 1 entregue e verificada end-to-end: registro/login reais, sessão persistente, perfil com avatar+stats, partidas vinculadas, OAuth Google (demo + endpoints reais prontos), recuperação de senha (demo).
+- M1: 4/4 critérios de saída atendidos (registro+login, sessão persistente, partidas vinculadas, perfil com avatar+stats). overallProgress=95% (1.9 plano de testes documentado em andamento; 1.10 N/A).
+- 2 commits locais pendentes de push: e8ad43f (Fase 0), e38fdc5 (Fase 1).
+- Pendência de push: requer PAT/SSH配置 — coordenador solicitará credenciais ao usuário.
