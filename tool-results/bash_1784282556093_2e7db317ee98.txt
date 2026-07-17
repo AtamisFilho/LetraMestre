@@ -179,7 +179,7 @@ Body: `{ "version": "0.3.1", "type": "patch", "notes": "..." }`. Registra um rel
 `status` ∈ { `open`, `closed` }. `severity` ∈ { `low`, `medium`, `high` }.
 
 ### POST /api/ops/debt/close
-Body: `{ "id": "dt_...", "resolution": "Índice corrigido para @@index([moveType])." }`.
+Body: `{ "id": "dt_...", "resolution": "Índice corrigido para @@index(oveType])." }`.
 ```json
 { "id": "dt_...", "status": "closed", "closedAt": "2025-10-16T22:33:00.000Z", "resolution": "..." }
 ```
@@ -234,7 +234,7 @@ Agent: Docs & Scripts (general-purpose)
 Task: Produzir documentação (RELEASE.md, CHANGELOG.md, docs/*) e scripts operacionais (backup-db.ts, validate-secrets.ts, release.sh, workflows CI) da Fase 0.
 
 Work Log:
-- Li `worklog.md` (plano + contrato de API), `.env.example` do LetraMestre real (`/tmp/LetraMestre/web/.env.example`), `prisma/schema.prisma` (model Move com `@@index([moveType])` já corrigido), README, `mini-services/game-server/index.ts` (configuração de env), `Caddyfile` (allow-list XTransformPort) e `docker-compose.yml`.
+- Li `worklog.md` (plano + contrato de API), `.env.example` do LetraMestre real (`/tmp/LetraMestre/web/.env.example`), `prisma/schema.prisma` (model Move com `@@index(oveType])` já corrigido), README, `mini-services/game-server/index.ts` (configuração de env), `Caddyfile` (allow-list XTransformPort) e `docker-compose.yml`.
 - Verifiquei que `/home/z/my-project/.env.example` ainda não existia (criação livre, sem sobrescrita de trabalho alheio). Confirmei que `db/custom.db` existe (88 KB) e que `package.json` está em v0.2.0.
 - Criei diretórios `docs/`, `scripts/`, `.github/workflows/`, `backups/` (este último já tinha `.gitkeep` do Agente A).
 - Produzi todos os 14 artefatos exigidos, em PT-BR profissional com tabelas e blocos de código.
@@ -487,105 +487,3 @@ Stage Summary:
 - 3 modelos Prisma a adicionar (PlayerAccount, PasswordResetToken, GameRecord).
 - 3 especialistas despachados em paralelo: Backend (Task 6), Frontend (Task 7), Docs (Task 8).
 - Entrega: seletor de modo Operações/Jogador; fluxo real de auth; perfil persistente; partidas simuladas vinculadas; visão ops de M1.
-
----
-Task ID: 8
-Agent: Docs Fase 1 (general-purpose)
-Task: Produzir docs/PHASE1.md, docs/PLAYER-AUTH.md, docs/TEST-PLAN-PHASE1.md e atualizar CHANGELOG.md e .env.example.
-
-Work Log:
-- Leu worklog.md (Task ID 5 — contrato de API da Fase 1), docs/PHASE0.md (alinhamento de estilo), CHANGELOG.md atual, scripts/validate-secrets.ts (lista de variáveis Phase 0) e docs/PRODUCTION-SETUP.md (variáveis opcionais WEB_ORIGIN/WEB_API_URL/GAME_SERVER_PORT).
-- Confirmou que .env.example não existia fisicamente no sandbox (apenas .env com DATABASE_URL); interpretou "append" como criação do arquivo com placeholders Phase 0 + blocos Phase 1 exigidos pelo briefing.
-- Criou docs/PHASE1.md: 7 seções (Objetivo, Tarefas 1.1-1.10, Entregáveis M1, Critério de saída, Status atual com §5.1 funcional e §5.2 dependências de infra externa, Decisões de implementação, Próximos passos). Status declarado: 1.1-1.8 done, 1.9 in_progress (plano documentado), 1.10 n/a (sem anônimos prévios).
-- Criou docs/PLAYER-AUTH.md: 10 seções (Visão geral, Modelos de dados com tabelas detalhadas, Senha/bcrypt cost 12, JWT HS256 com claims {sub,email,username,scope:'player'}, Cookie player_session HttpOnly+Secure+SameSite=Lax+Path=/+Max-Age 7d com justificativa Lax vs Strict/None, Endpoints tabela completa /api/auth/player/* + /api/player/* + /api/ops/phase1/*, Recuperação de senha token hex 32 TTL 1h single-use com modo demo rotulado, OAuth Google pré-reqs+fluxo real+demo+segurança state/CSRF/JWKS, Segurança rate-limit/CSRF/rotação AUTH_SECRET/zod, Migração de anônimos 1.10 estratégia + justificativa N/A).
-- Criou docs/TEST-PLAN-PHASE1.md: 7 seções (Escopo, Casos funcionais F-001 a F-032, Casos de segurança S-001 a S-016, Casos de OAuth O-001 a O-010, Casos de borda B-001 a B-024, Critério de aceitação com 6 itens + não-bloqueantes, Ambiente de execução sugerido).
-- Atualizou CHANGELOG.md: estendeu seção [Unreleased] pré-existente com 8 novos itens em Added (sistema de contas, JWT/cookie, OAuth Google, recuperação de senha, perfil, partidas simuladas, seletor de modo, seção Ops) + 1 em Changed (.env.example + schema Prisma). Preservou todas as entradas existentes (Fase 0 e [0.3.0]/[0.2.0]/[0.1.0]).
-- Criou .env.example com placeholders Phase 0 (DATABASE_URL, AUTH_SECRET, INTERNAL_API_KEY, ADMIN_USERNAME, ADMIN_PASSWORD, WEB_ORIGIN, WEB_API_URL, GAME_SERVER_PORT) + bloco Phase 1 exatamente como especificado (PLAYER_SESSION_TTL_SECONDS, GOOGLE_OAUTH_CLIENT_ID/SECRET/REDIRECT_URI, SMTP_HOST/PORT/USER/PASS/FROM). Validou sintaxe com awk: todas as 17 chaves OK com aspas duplas balanceadas.
-- Não tocou em src/, prisma/, mini-services/, scripts/ existentes, RELEASE.md, docs da Fase 0.
-
-Stage Summary:
-- Arquivos criados: docs/PHASE1.md, docs/PLAYER-AUTH.md, docs/TEST-PLAN-PHASE1.md, .env.example.
-- Arquivos modificados: CHANGELOG.md (seção [Unreleased] estendida), worklog.md (este append).
-- Pendências: execução do plano de testes (1.9) depende de ambiente com suite automatizada; OAuth Google real e e-mail de recuperação real dependem de infra externa (Google Cloud Console + SMTP) — ambos documentados em docs/PHASE1.md §5.2 e docs/PLAYER-AUTH.md §§7-8.
-
----
-Task ID: 6
-Agent: Backend Fase 1 (full-stack-developer)
-Task: Implementar PlayerAccount, auth-player, endpoints auth/games/ops da Fase 1 (marco M1).
-
-Work Log:
-- Leu worklog.md (Task ID 5 — contrato de API Fase 1), prisma/schema.prisma atual, src/lib/db.ts e src/lib/ops/*.ts da Fase 0 para alinhar estilo.
-- Verificou dependências instaladas: `jose` e `zod` presentes; `bcryptjs` ausente → instalado `bcryptjs@3.0.3` + `@types/bcryptjs@3.0.0` via `bun add` (justificado: stack exigia bcryptjs para auth do jogador; sem alternativa equivalente já presente).
-- Adicionou `AUTH_SECRET=letramestre-dev-secret-please-change-in-production-32bytes` ao `.env` (estava ausente — apenas DATABASE_URL).
-- Passo 1 (Schema): estendeu `prisma/schema.prisma` com 3 modelos (`PlayerAccount`, `PasswordResetToken`, `GameRecord`) mantendo todos os modelos da Fase 0 intactos. `bun run db:push` → "Your database is now in sync with your Prisma schema. Done in 19ms" + Prisma Client v6.19.2 regenerado.
-- Passo 2 (auth-player.ts): criou `src/lib/auth-player.ts` com bcrypt cost 12, JWT HS256 (jose) com claim `scope:'player'`, cookie `player_session` (HttpOnly, Secure em prod, SameSite=Lax, Path=/, Max-Age=604800). Funções: `hashPassword`, `verifyPassword`, `signPlayerToken`, `verifyPlayerToken`, `playerCookieOptions`, `buildPlayerSetCookieHeader`, `buildPlayerClearCookieHeader`, `getPlayerSession` (usa `cookies()` de next/headers — server-only), `requirePlayer`. Schemas zod: `registerSchema`, `loginSchema`, `forgotPasswordSchema`, `resetPasswordSchema`, `googleDemoSchema`, `updateProfileSchema`, `simulateGameSchema`. Helpers de serialização `toPublicPlayer`/`withStats` (sem vazar passwordHash/tokens).
-- Passo 3 (ops/phase1.ts): criou `src/lib/ops/phase1.ts` com mapa estático das 10 tasks (1.1-1.8 done=100, 1.9 in_progress=50 plano documentado, 1.10 n/a=100 sem anônimos), `getPhase1Status()` computando exitCriteria do estado real do banco, `getPhase1PlayersReport(limit=100)` com provider ('password'|'google'|'both') derivado de passwordHash/googleId.
-- Passo 4 (Endpoints auth): 8 route handlers em `src/app/api/auth/player/`:
-  - `register/route.ts` POST — valida, verifica email/username únicos (409), hasheia senha, cria PlayerAccount com avatar DiceBear initials, signa token, seta cookie, 201 `{player, session:true}`.
-  - `login/route.ts` POST — verifica senha, atualiza lastLoginAt, seta cookie, retorna player.
-  - `logout/route.ts` POST — limpa cookie, `{ok:true}`.
-  - `me/route.ts` GET+PATCH — GET retorna player com stats (winRate, googleLinked); PATCH atualiza displayName/bio/avatarUrl.
-  - `forgot-password/route.ts` POST — cria PasswordResetToken (hex 32, TTL 1h); modo demo retorna `{ok, demoResetToken, demoResetUrl, demoNote}`; email inexistente retorna `{ok:true}` (não vaza existência).
-  - `reset-password/route.ts` POST — valida token (existe, não expirado, não usado), hasheia nova senha, marca token usedAt=now em transação; 400 em falhas.
-  - `google/route.ts` GET — se GOOGLE_OAUTH_CLIENT_ID+REDIRECT_URI definidos, gera authUrl real com state random; senão `{configured:false, demo:true}`.
-  - `google/demo/route.ts` POST — cria/reativa PlayerAccount com googleId=`demo-${email}` (sem passwordHash), username único com sufixo se colidir, seta cookie.
-- Passo 5 (Partidas): `src/app/api/player/games/route.ts` GET (lista 50 mais recentes) e `simulate/route.ts` POST (gera result/score/opponent aleatórios se omitidos, cria GameRecord, atualiza gamesPlayed/gamesWon/totalScore/bestScore).
-- Passo 6 (Ops Fase 1): `src/app/api/ops/phase1/status/route.ts` GET e `players/route.ts` GET.
-- Passo 7 (Seed): criou `scripts/seed-players.ts` idempotente (upsert por email). Populou 4 jogadores demo: `jogador@letramestre.com`/`senha12345` (e-mail+senha, 6 partidas), `demo.google@example.com` (Google demo, 3 partidas), `misto@letramestre.com`/`senha12345` (senha+Google, 4 partidas — provider='both'), `novato@letramestre.com`/`senha12345` (recém-criado, 0 partidas). 13 GameRecord no total. `bun run scripts/seed-players.ts` → "PlayerAccount=4, GameRecord=13".
-- Passo 8 (Validação): dev server estava com Prisma client em cache (erro "Cannot read properties of undefined (reading 'findFirst')" em /api/ops/phase1/status). Reiniciou dev server (PID original do sistema havia sido finalizado por SIGTERM; reiniciado via `setsid` para detach total). curls executados em http://127.0.0.1:3000 — TODOS PASSANDO:
-  - REGISTER → 201 com player + session=true.
-  - LOGIN → 200 com player + cookie player_session setado.
-  - GET /me → 200 com player + winRate + googleLinked.
-  - POST /games/simulate → 201 com game (result/score/opponent gerados).
-  - GET /games → 200 lista de partidas.
-  - GET /api/ops/phase1/status → overallProgress=95 (9 tasks 100% + 1 task 50%), 4/4 exitCriteria met.
-  - GET /api/ops/phase1/players → total, withGoogle, withPassword, lista com provider correto.
-  - POST /forgot-password → 200 com demoResetToken.
-  - POST /reset-password → 200 ok:true; REUSO do token → 400 "Token já foi utilizado".
-  - LOGIN com nova senha → 200 (senha foi efetivamente trocada).
-  - GET /google → `{configured:false, demo:true}` (sem env vars).
-  - POST /google/demo → 200 cria/reativa PlayerAccount com googleId.
-  - POST /logout → 200 ok:true.
-  - POST /forgot-password para email inexistente → `{ok:true}` (não vaza).
-  - REGISTER conflito (email em uso) → 409.
-  - REGISTER validação fraca (email inválido, username curto, senha curta) → 400.
-  - PATCH /me → 200 com displayName e bio atualizados.
-- Lint: `bun run lint` → 0 errors, 0 warnings (após remover eslint-disable desnecessário em google/demo/route.ts e import não usado em me/route.ts).
-
-Stage Summary:
-- Arquivos criados: `src/lib/auth-player.ts`, `src/lib/ops/phase1.ts`, `src/app/api/auth/player/{register,login,logout,me,forgot-password,reset-password,google,google/demo}/route.ts` (8 endpoints, sendo me com GET+PATCH), `src/app/api/player/games/route.ts`, `src/app/api/player/games/simulate/route.ts`, `src/app/api/ops/phase1/status/route.ts`, `src/app/api/ops/phase1/players/route.ts`, `scripts/seed-players.ts`. Total: 12 novos + 1 modificado (schema.prisma) + .env com AUTH_SECRET adicionado.
-- db:push: sucesso (Prisma Client v6.19.2 regenerado). seed: 4 PlayerAccount + 13 GameRecord. curls: 19 testes, todos passando (incluindo casos de erro 400/401/409). lint: 0/0.
-- Pendências: (a) OAuth Google real requer `GOOGLE_OAUTH_CLIENT_ID` + `GOOGLE_OAUTH_REDIRECT_URI` + callback handler — apenas o init (`GET /google`) e o demo (`POST /google/demo`) foram implementados; (b) e-mail de recuperação real requer SMTP (forgot-password retorna o token no JSON em modo demo); (c) CSRF/rate-limit não implementados nesta fase (documentados em docs/PLAYER-AUTH.md pelo Agente F); (d) dev server reiniciado manualmente — coordenador deve garantir que o sistema de auto-restart está estabilizado para os próximos agentes.
-
----
-Task ID: 7
-Agent: Frontend Fase 1 (full-stack-developer)
-Task: Adicionar experiência de Conta do Jogador (Fase 1) à rota / — seletor de modo, auth, perfil, partidas, seção ops M1.
-
-Work Log:
-- Leu worklog.md (Task ID 5 — contrato de API Fase 1, Tasks 0-4 da Fase 0, Task 6 do backend Fase 1 já concluída). Inspecionou `src/app/page.tsx` (OpsConsole inline com 8 seções), `src/components/site/header.tsx`, `src/components/ops/section-shell.tsx` e `src/lib/ops/client.ts` para alinhar estilo.
-- Confirmou stack disponível: shadcn/ui (tabs, dialog, card, input, label, button, avatar, badge, skeleton, table, textarea, sonner, tooltip), `framer-motion`, `next-themes`, `zod`, `zustand`, `lucide-react`. Nenhuma dependência nova precisou ser instalada.
-- Verificado que o Agente D (Task 6) já havia criado todos os endpoints `/api/auth/player/*`, `/api/player/*`, `/api/ops/phase1/*` e o schema Prisma (PlayerAccount, PasswordResetToken, GameRecord) + seed com 4 contas. Endpoints respondendo 200/201.
-- Passo 1 (Cliente de dados): criou `src/lib/auth-player-client.ts` com tipos TS alinhados ao contrato, fetchers com `credentials: 'include'` + `cache: 'no-store'`, `PlayerApiError`, hook `usePlayerSession` (hidrata no mount via GET /me, 401 → player null sem erro), utilitários `playerInitials`/`providerLabel`. Adicionou normalizador `normalizePlayerMe` que tolera tanto o formato do contrato (`stats` aninhado) quanto o formato efetivo do backend (stats flat + `winRate` + `googleLinked`), derivando `provider` de `googleLinked` quando o backend não envia explicitamente.
-- Passo 2 (Componentes player/*): criou 7 componentes client-side:
-  - `auth-screen.tsx` — Card mobile-first com Tabs Entrar/Criar conta; validação client-side (email, username 3-20 alfanuméricos/_, senha min 8, confirmação); botão "Entrar com Google" que chama `GET /api/auth/player/google` e abre dialog demo se `demo: true` ou redireciona para `authUrl` se `configured: true`; sub-telas internas de Forgot e Reset (auto-detecta `?reset-token=` na URL no mount e limpa o query param).
-  - `forgot-password.tsx` — formulário que exibe `demoResetUrl`/`demoResetToken` retornados com mensagem clara sobre ambiente sem SMTP e botão "Redefinir com este token".
-  - `reset-password.tsx` — formulário com token (pré-preenchido), nova senha + confirmação, validação min 8.
-  - `google-demo-dialog.tsx` — Dialog explicando que OAuth Google requer configuração em produção, com campos opcionais de email/nome e botão "Continuar com conta Google demo".
-  - `edit-profile-dialog.tsx` — Dialog com displayName, bio (max 280 com contador), avatarUrl (opcional) → `PATCH /me`.
-  - `profile-screen.tsx` — cabeçalho com avatar (fallback de iniciais), displayName, @username, email, badge provider condicional, badge "Conta Fase 1", bio (ou placeholder), datas de entrada/último login; botões Editar/Sair; grid de stats (Partidas, Vitórias, Taxa de vitória, Pontuação total, Melhor pontuação); seção "Partidas recentes" com badges coloridos (win=emerald, loss=rose, draw=amber), score, opponent, data, idioma; botões Atualizar/Simular partida; estado vazio amigável; toast de feedback.
-  - `player-app.tsx` — orquestrador que usa `usePlayerSession` e alterna entre AuthScreen e ProfileScreen com `AnimatePresence` (framer-motion) + skeletons de loading + spinner "Carregando sessão…".
-- Passo 3 (Mode store): criou `src/lib/mode-store.ts` com Zustand + `persist` middleware (`skipHydration: true` + reidratação no `useEffect` para evitar mismatch de SSR). Hook `useAppMode` retorna `{ mode, setMode, hydrated }`. Compartilhado entre Header (renderizado no layout) e `page.tsx` sem precisar modificar `layout.tsx`.
-- Passo 4 (Seção Fase 1 no OpsConsole): criou `src/components/ops/phase1-section.tsx` consumindo `/api/ops/phase1/status` e `/api/ops/phase1/players` em paralelo. Renderiza: progresso M1 + critérios de saída, KPIs (total contas, com senha, com Google, vitórias registradas), tabela de contas com avatar/username/email/provider/partidas/vitórias/último login, tabela de 10 tarefas (1.1-1.10) com `Phase1TaskStatusBadge` local que inclui status "N/A" (1.10) além dos 4 da Fase 0.
-- Passo 5 (Extração do OpsConsole): criou `src/components/ops/ops-console.tsx` movendo o conteúdo de `src/app/page.tsx` da Fase 0 (preservando integralmente as 8 seções originais), adicionando a 9ª seção "Contas de jogador (Fase 1)" (ícone `Users`) no array `SECTIONS` e atualizando o subtítulo do sidebar para "Console · Fase 0 + Fase 1".
-- Passo 6 (Header com seletor de modo): atualizou `src/components/site/header.tsx` com segmented control (2 botões) com ícones `Settings2` (Operações) e `UserCircle2` (Jogador), `aria-pressed` para acessibilidade, badge dinâmico (Fase 0 · M0 vs Fase 1 · M1) e subtítulo do logo dinâmico ("Console de Operações" vs "Conta do Jogador").
-- Passo 7 (Shell page.tsx): refatorou `src/app/page.tsx` para um shell mínimo que renderiza `<OpsConsole>` ou `<PlayerApp>` conforme `effectiveMode` (default 'ops' antes da hidratação para evitar mismatch).
-- Passo 8 (Lint): `bun run lint` → 0 errors, 0 warnings em todo o projeto (incluindo arquivos das Tasks 6 e 8).
-- Passo 9 (Agent Browser E2E): abriu http://localhost:3000/, viewport 1440x900 e 390x844 (mobile). Capturou 20 screenshots em `/home/z/my-project/agent-ctx/phase1-*.png` cobrindo: modo Operações default, seção Fase 1 com contas reais, modo Jogador AuthScreen, registro bem-sucedido, perfil com 3 partidas simuladas, dialog editar perfil, perfil editado, logout, login de volta, forgot password com token exibido, reset password, login com nova senha, dialog Google demo, login Google demo logado, volta para Operações, seção Fase 1 listando os novos jogadores, mobile Operações, mobile Jogador. `agent-browser errors` vazio; `agent-browser console` apenas logs HMR/Fast Refresh.
-
-Stage Summary:
-- Arquivos criados (9): `src/lib/auth-player-client.ts`, `src/lib/mode-store.ts`, `src/components/player/{auth-screen,forgot-password,reset-password,google-demo-dialog,edit-profile-dialog,profile-screen,player-app}.tsx` (7), `src/components/ops/phase1-section.tsx`, `src/components/ops/ops-console.tsx`.
-- Arquivos modificados (2): `src/app/page.tsx` (refatorado para shell com mode switch), `src/components/site/header.tsx` (adicionado seletor de modo + badges dinâmicos).
-- Lint: 0 errors, 0 warnings. Dev server: 12 endpoints consumidos respondendo 200/201. Agent Browser: 20 screenshots, todos os fluxos (registro, login, logout, edição, forgot/reset, Google demo, simular partida, troca de modo) funcionando E2E, sem erros no console.
-- Pendências: nenhuma crítica de frontend. Sugestão ao backend (Agente D): expor `provider` explicitamente no `/me` (hoje derivado de `googleLinked`) e/ou alinhar o formato ao contrato (`stats` aninhado) — o frontend já tolera ambos os formatos via `normalizePlayerMe`.
-

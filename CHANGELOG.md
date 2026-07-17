@@ -28,10 +28,40 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
 - **Workflows de CI** de referência: `.github/workflows/ci.yml` (lint, test,
   build) e `.github/workflows/android.yml` (assembleDebug em tag).
 - **Helper de release** `scripts/release.sh` para bump + tag + commit.
+- **Sistema de contas de jogador (Fase 1)** — modelo `PlayerAccount`
+  (Prisma) com registro e login por e-mail + senha (bcrypt cost 12).
+- **Autenticação via JWT (HS256)** com cookie HttpOnly `player_session`
+  (TTL 7 dias, `SameSite=Lax`, `Secure` em produção), distinto do
+  `admin_session` via claim `scope:'player'`. Reaproveita `AUTH_SECRET`
+  existente.
+- **Login social Google OAuth2** — endpoints reais
+  (`/api/auth/player/google` + `/api/auth/player/google/callback`) prontos
+  para uso quando `GOOGLE_OAUTH_CLIENT_ID` configurado, com modo
+  demonstração (`/api/auth/player/google/demo`) sem credenciais.
+- **Recuperação de senha por token** — token hex 32 bytes, TTL 1h,
+  single-use. Em produção entrega via SMTP; em modo demo retorna o token
+  na resposta (apenas dev).
+- **Tela de perfil do jogador** com avatar (DiceBear `initials`), bio,
+  estatísticas (`gamesPlayed`, `gamesWon`, `winRate`, `totalScore`,
+  `bestScore`) e partidas recentes.
+- **Partidas simuladas vinculadas à conta** — `POST /api/player/games/simulate`
+  + `GET /api/player/games` demonstrando o vínculo conta↔partida
+  (`GameRecord.playerId`).
+- **Seletor de modo Operações/Jogador** no cabeçalho do app
+  (`src/components/site/header.tsx`).
+- **Seção "Contas de jogador (Fase 1)"** no Console de Operações com
+  progresso do marco M1 (`GET /api/ops/phase1/status`) e lista de
+  jogadores cadastrados (`GET /api/ops/phase1/players`).
+- **Documentação da Fase 1**: `docs/PHASE1.md` (execução),
+  `docs/PLAYER-AUTH.md` (guia técnico de auth) e
+  `docs/TEST-PLAN-PHASE1.md` (plano de testes da tarefa 1.9).
 
 ### Changed
 - `.env.example` reescrito com placeholders seguros e instruções de geração
-  de segredos via `openssl rand`.
+  de segredos via `openssl rand`; acrescentadas variáveis da Fase 1
+  (`PLAYER_SESSION_TTL_SECONDS`, `GOOGLE_OAUTH_*`, `SMTP_*`).
+- `prisma/schema.prisma` estendido com os models `PlayerAccount`,
+  `PasswordResetToken` e `GameRecord`.
 
 ### Fixed
 - _Nada nesta versão._

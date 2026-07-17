@@ -98,3 +98,57 @@ model BuildValidation {
   durationMs      Int       @default(0)
   runAt           DateTime  @default(now())
 }
+
+// ============================================================
+// LetraMestre — Fase 1: Contas de jogador (marco M1)
+// Adicionado pelo Agente D (Backend Fase 1 / Task 6)
+// ============================================================
+
+model PlayerAccount {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  username      String    @unique
+  displayName   String
+  passwordHash  String?
+  googleId      String?   @unique
+  avatarUrl     String?
+  bio           String    @default("")
+  emailVerified DateTime?
+  lastLoginAt   DateTime?
+  gamesPlayed   Int       @default(0)
+  gamesWon      Int       @default(0)
+  totalScore    Int       @default(0)
+  bestScore     Int       @default(0)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  resetTokens   PasswordResetToken[]
+  games         GameRecord[]
+
+  @@index([email])
+}
+
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  playerId  String
+  token     String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+  player    PlayerAccount @relation(fields: [playerId], references: [id], onDelete: Cascade)
+
+  @@index([playerId])
+}
+
+model GameRecord {
+  id         String   @id @default(cuid())
+  playerId   String
+  result     String
+  score      Int      @default(0)
+  opponent   String   @default("")
+  language   String   @default("pt-BR")
+  createdAt  DateTime @default(now())
+  player     PlayerAccount @relation(fields: [playerId], references: [id], onDelete: Cascade)
+
+  @@index([playerId])
+  @@index([createdAt])
+}
