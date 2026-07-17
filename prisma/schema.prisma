@@ -102,6 +102,8 @@ model BuildValidation {
 // ============================================================
 // LetraMestre — Fase 1: Contas de jogador (marco M1)
 // Adicionado pelo Agente D (Backend Fase 1 / Task 6)
+// Estendido pelo Agente G (Backend Fase 2 / Task 11): índices de ranking
+//   + relação com PlayerAchievement.
 // ============================================================
 
 model PlayerAccount {
@@ -123,8 +125,13 @@ model PlayerAccount {
   updatedAt     DateTime  @updatedAt
   resetTokens   PasswordResetToken[]
   games         GameRecord[]
+  achievements  PlayerAchievement[]
 
   @@index([email])
+  // Índices para acelerar consultas de ranking (Fase 2 — Task 2.8)
+  @@index([gamesWon])
+  @@index([totalScore])
+  @@index([bestScore])
 }
 
 model PasswordResetToken {
@@ -151,4 +158,35 @@ model GameRecord {
 
   @@index([playerId])
   @@index([createdAt])
+  @@index([result])
+}
+
+// ============================================================
+// LetraMestre — Fase 2: Ranking, estatísticas e conquistas (marco M2)
+// Adicionado pelo Agente G (Backend Fase 2 / Task 11)
+// ============================================================
+
+model Achievement {
+  id          String   @id @default(cuid())
+  code        String   @unique
+  name        String
+  description String   @default("")
+  icon        String   @default("award")
+  category    String   @default("gameplay") // gameplay, streak, social, special
+  tier        String   @default("bronze")   // bronze, silver, gold, platinum
+  target      Int      @default(1)
+  createdAt   DateTime @default(now())
+  unlocks     PlayerAchievement[]
+}
+
+model PlayerAchievement {
+  id            String   @id @default(cuid())
+  playerId      String
+  achievementId String
+  unlockedAt    DateTime @default(now())
+  player        PlayerAccount @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  achievement   Achievement   @relation(fields: [achievementId], references: [id], onDelete: Cascade)
+
+  @@unique([playerId, achievementId])
+  @@index([playerId])
 }

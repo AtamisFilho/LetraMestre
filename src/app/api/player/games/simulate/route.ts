@@ -1,6 +1,10 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getPlayerSession, simulateGameSchema } from '@/lib/auth-player'
+import {
+  checkAndUnlockAchievements,
+  unlockBingoAchievement,
+} from '@/lib/ops/achievements'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -75,6 +79,26 @@ export async function POST(req: Request) {
       data: { gamesPlayed, gamesWon, totalScore, bestScore },
     })
 
+    // Verifica conquistas baseadas em contadores/streak (Fase 2 — Task 2.6)
+    const newAchievementResults = await checkAndUnlockAchievements(session.id)
+
+    // `bingo`: 10% de chance por vitória (não-determinístico, tratado aqui)
+    if (result === 'win' && Math.random() < 0.1) {
+      const bingo = await unlockBingoAchievement(session.id)
+      if (bingo && bingo.isNew) {
+        newAchievementResults.push({ code: 'bingo', achievement: bingo.achievement })
+      }
+    }
+
+    const newAchievements = newAchievementResults.map(({ achievement }) => ({
+      id: achievement.id,
+      code: achievement.code,
+      name: achievement.name,
+      description: achievement.description,
+      icon: achievement.icon,
+      tier: achievement.tier,
+    }))
+
     return NextResponse.json(
       {
         game: {
@@ -86,6 +110,7 @@ export async function POST(req: Request) {
           language: game.language,
           createdAt: game.createdAt.toISOString(),
         },
+        newAchievements,
       },
       { status: 201 },
     )

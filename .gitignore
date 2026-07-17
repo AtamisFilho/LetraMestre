@@ -60,4 +60,5 @@ server.log
 !/backups/.gitkeep
 /.zscripts/*.pid
 /mini-services/*/service.log
-agent-ctx/*.png
+agent-ctx/*.pngtool-results/
+/tool-results/

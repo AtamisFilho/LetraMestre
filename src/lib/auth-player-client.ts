@@ -116,8 +116,43 @@ export interface GoogleDemoResponse {
   session: boolean;
 }
 
+export interface AchievementSummary {
+  id: string;
+  code: string;
+  name: string;
+  description: string;
+  icon: string;
+  category: string;
+  tier: 'bronze' | 'silver' | 'gold' | 'platinum';
+}
+
+export interface UnlockedAchievement extends AchievementSummary {
+  unlockedAt: string;
+}
+
+export interface LockedAchievementProgress {
+  id: string;
+  code: string;
+  name: string;
+  description: string;
+  icon: string;
+  category: string;
+  tier: 'bronze' | 'silver' | 'gold' | 'platinum';
+  progress: { current: number; target: number; percent: number };
+}
+
+export interface NewAchievement {
+  id: string;
+  code: string;
+  name: string;
+  description: string;
+  icon: string;
+  tier: 'bronze' | 'silver' | 'gold' | 'platinum';
+}
+
 export interface SimulateGameResponse {
   game: GameRecord;
+  newAchievements?: NewAchievement[];
 }
 
 export interface MyGamesResponse {
@@ -426,6 +461,119 @@ export const simulateGame = (body?: {
 
 export const getMyGames = () =>
   playerFetch<MyGamesResponse>('/api/player/games');
+
+// ---------------------------------------------------------------------------
+// Fetchers — Fase 2 (ranking, estatísticas expandidas, conquistas)
+// ---------------------------------------------------------------------------
+
+export type LeaderboardMetric = 'wins' | 'avgScore';
+
+export interface LeaderboardPlayer {
+  rank?: number;
+  playerId: string;
+  displayName: string;
+  username: string;
+  avatarUrl: string | null;
+  gamesPlayed: number;
+  gamesWon: number;
+  winRate: number;
+  totalScore: number;
+  avgScore: number;
+  bestScore: number;
+}
+
+export interface LeaderboardResult {
+  metric: LeaderboardMetric;
+  total: number;
+  limit: number;
+  offset: number;
+  players: LeaderboardPlayer[];
+  searchResults: LeaderboardPlayer[] | null;
+  cachedAt?: string;
+  durationMs?: number;
+}
+
+export interface PlayerStatsSummary {
+  gamesPlayed: number;
+  gamesWon: number;
+  gamesLost: number;
+  gamesDraw: number;
+  winRate: number;
+  totalScore: number;
+  avgScore: number;
+  bestScore: number;
+  currentStreak: number;
+  bestStreak: number;
+}
+
+export interface PlayerStatsEvolutionPoint {
+  gameId: string;
+  date: string;
+  result: GameResult;
+  score: number;
+  cumulativeScore: number;
+  cumulativeWins: number;
+}
+
+export interface PlayerStatsResponse {
+  summary: PlayerStatsSummary;
+  evolution: PlayerStatsEvolutionPoint[];
+  distribution: { wins: number; losses: number; draws: number };
+  recentForm: GameResult[];
+  achievements: {
+    unlocked: number;
+    total: number;
+    recent: { id: string; code: string; name: string; unlockedAt: string }[];
+  };
+}
+
+export interface AchievementsListResponse {
+  achievements: AchievementSummary[];
+}
+
+export interface PlayerAchievementsStats {
+  unlocked: number;
+  total: number;
+  percent: number;
+}
+
+export interface PlayerAchievementsResponse {
+  unlocked: UnlockedAchievement[];
+  locked: LockedAchievementProgress[];
+  stats: PlayerAchievementsStats;
+}
+
+export interface FetchLeaderboardParams {
+  metric?: LeaderboardMetric;
+  limit?: number;
+  offset?: number;
+  search?: string;
+}
+
+export function fetchLeaderboard(
+  params: FetchLeaderboardParams = {},
+): Promise<LeaderboardResult> {
+  const sp = new URLSearchParams();
+  if (params.metric) sp.set('metric', params.metric);
+  if (typeof params.limit === 'number') sp.set('limit', String(params.limit));
+  if (typeof params.offset === 'number') sp.set('offset', String(params.offset));
+  if (params.search) sp.set('search', params.search);
+  const qs = sp.toString();
+  const url = qs ? `/api/leaderboard?${qs}` : '/api/leaderboard';
+  return playerFetch<LeaderboardResult>(url);
+}
+
+export function fetchPlayerStats(): Promise<PlayerStatsResponse> {
+  return playerFetch<PlayerStatsResponse>('/api/player/stats');
+}
+
+export function fetchPlayerAchievements(): Promise<PlayerAchievementsResponse> {
+  return playerFetch<PlayerAchievementsResponse>('/api/player/achievements');
+}
+
+export function fetchAchievements(): Promise<AchievementsListResponse> {
+  return playerFetch<AchievementsListResponse>('/api/achievements');
+}
 
 // ---------------------------------------------------------------------------
 // Fetchers — ops phase 1

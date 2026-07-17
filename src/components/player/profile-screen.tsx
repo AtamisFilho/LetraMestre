@@ -2,17 +2,16 @@
 
 import * as React from 'react';
 import {
+  ArrowRight,
   Edit3,
+  Gamepad2,
   Loader2,
   LogOut,
+  Medal,
   Plus,
   RefreshCw,
-  Trophy,
   Swords,
-  Gamepad2,
-  Medal,
-  Target,
-  Percent,
+  Trophy,
 } from 'lucide-react';
 import { motion } from 'framer-motion';
 
@@ -26,26 +25,34 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
+import { Progress } from '@/components/ui/progress';
 import { Skeleton } from '@/components/ui/skeleton';
 import { toast } from 'sonner';
 
 import {
-  getMyGames,
   getMe,
-  simulateGame,
+  getMyGames,
   PlayerApiError,
   playerInitials,
   providerLabel,
+  simulateGame,
   type GameRecord,
   type GameResult,
+  type NewAchievement,
   type PlayerMe,
+  type PlayerStatsResponse,
 } from '@/lib/auth-player-client';
 import { EditProfileDialog } from './edit-profile-dialog';
+import { ExpandedProfile } from './expanded-profile';
+import { showAchievementToast } from './achievement-toast';
+import { AchievementIcon } from './achievements-panel';
 
 interface ProfileScreenProps {
   player: PlayerMe;
   onUpdated: (p: PlayerMe) => void;
   onLogout: () => void;
+  /** Navega para a tab Conquistas no PlayerApp. */
+  onViewAchievements?: () => void;
 }
 
 const RESULT_META: Record<
@@ -86,40 +93,38 @@ function formatDate(iso: string): string {
   }
 }
 
-function StatCard({
-  label,
-  value,
-  icon,
-}: {
-  label: string;
-  value: React.ReactNode;
-  icon: React.ReactNode;
-}) {
-  return (
-    <div className="rounded-xl border bg-card p-4 shadow-sm">
-      <div className="flex items-center justify-between gap-2">
-        <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-          {label}
-        </span>
-        <span className="text-muted-foreground" aria-hidden>
-          {icon}
-        </span>
-      </div>
-      <div className="mt-2 text-2xl font-bold tabular-nums">{value}</div>
-    </div>
-  );
+function resultLabel(r: GameResult): string {
+  return r === 'win' ? 'vitória' : r === 'loss' ? 'derrota' : 'empate';
+}
+
+/**
+ * Dispara toasts de conquista em sequência (com pequeno delay entre eles
+ * para evitar empilhamento visual confuso).
+ */
+function announceNewAchievements(achievements: NewAchievement[]): void {
+  if (!achievements || achievements.length === 0) return;
+  achievements.forEach((a, i) => {
+    window.setTimeout(() => showAchievementToast(a), i * 300);
+  });
 }
 
 export function ProfileScreen({
   player,
   onUpdated,
   onLogout,
+  onViewAchievements,
 }: ProfileScreenProps) {
   const [editOpen, setEditOpen] = React.useState(false);
   const [games, setGames] = React.useState<GameRecord[]>([]);
   const [gamesLoading, setGamesLoading] = React.useState(true);
   const [simulating, setSimulating] = React.useState(false);
   const [loggingOut, setLoggingOut] = React.useState(false);
+  const [statsRefreshKey, setStatsRefreshKey] = React.useState(0);
+  const [achievementTeaser, setAchievementTeaser] = React.useState<{
+    unlocked: number;
+    total: number;
+    recent: PlayerStatsResponse['achievements']['recent'];
+  } | null>(null);
 
   const loadGames = React.useCallback(async () => {
     setGamesLoading(true);
@@ -146,22 +151,23 @@ export function ProfileScreen({
     try {
       const r = await simulateGame();
       toast.success(
-        `Partida simulada: ${
-          r.game.result === 'win'
-            ? 'vitória'
-            : r.game.result === 'loss'
-              ? 'derrota'
-              : 'empate'
-        } · ${r.game.score} pts.`,
+        `Partida simulada: ${resultLabel(r.game.result)} · ${r.game.score} pts.`,
       );
-      // Refresh jogos + stats (busca /me novamente via callback).
+      // Anuncia novas conquistas (se houver) — delay escalonado entre toasts.
+      announceNewAchievements(r.newAchievements ?? []);
+      // Força re-fetch das estatísticas expandidas + partidas + /me.
+      setStatsRefreshKey((k) => k + 1);
       await loadGames();
-      // Recarrega perfil para atualizar stats.
       try {
         const me = await getMe();
         if (me) onUpdated(me);
       } catch {
         // silent — apenas stats ficam defasadas.
+      }
+      if ((r.newAchievements ?? []).length > 0) {
+        toast.info(`${(r.newAchievements ?? []).length} nova(s) conquista(s)!`, {
+          description: 'Veja na aba Conquistas.',
+        });
       }
     } catch (e) {
       const msg =
@@ -192,8 +198,26 @@ export function ProfileScreen({
     }
   };
 
-  const stats = player.stats;
-  const winRatePct = Math.round(stats.winRate ?? 0);
+  const handleStatsLoaded = React.useCallback(
+    (stats: PlayerStatsResponse | null) => {
+      if (!stats) {
+        setAchievementTeaser(null);
+        return;
+      }
+      setAchievementTeaser({
+        unlocked: stats.achievements.unlocked,
+        total: stats.achievements.total,
+        recent: stats.achievements.recent,
+      });
+    },
+    [],
+  );
+
+  const teaserPct = achievementTeaser
+    ? achievementTeaser.total > 0
+      ? Math.round((achievementTeaser.unlocked / achievementTeaser.total) * 100)
+      : 0
+    : 0;
 
   return (
     <motion.div
@@ -225,7 +249,7 @@ export function ProfileScreen({
                 </Badge>
               ) : null}
               <Badge variant="secondary" className="bg-primary/10 text-primary">
-                Conta Fase 1
+                Fase 2
               </Badge>
             </div>
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
@@ -288,44 +312,75 @@ export function ProfileScreen({
         </CardContent>
       </Card>
 
-      {/* Stats grid */}
-      <section aria-label="Estatísticas do jogador">
-        <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-          Estatísticas
-        </h3>
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-          <StatCard
-            label="Partidas"
-            value={stats.gamesPlayed}
-            icon={<Gamepad2 className="size-4" />}
-          />
-          <StatCard
-            label="Vitórias"
-            value={stats.gamesWon}
-            icon={<Trophy className="size-4" />}
-          />
-          <StatCard
-            label="Taxa de vitória"
-            value={
-              <span>
-                {winRatePct}
-                <span className="text-base text-muted-foreground">%</span>
-              </span>
-            }
-            icon={<Percent className="size-4" />}
-          />
-          <StatCard
-            label="Pontuação total"
-            value={stats.totalScore}
-            icon={<Target className="size-4" />}
-          />
-          <StatCard
-            label="Melhor pontuação"
-            value={stats.bestScore}
-            icon={<Medal className="size-4" />}
-          />
-        </div>
-      </section>
+      {/* Perfil expandido (Fase 2): KPIs + gráficos + forma recente */}
+      <ExpandedProfile
+        refreshKey={statsRefreshKey}
+        onStatsLoaded={handleStatsLoaded}
+      />
+
+      {/* Resumo de conquistas (teaser) + CTA para a tab Conquistas */}
+      <Card>
+        <CardHeader className="gap-2">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Trophy className="size-4 text-primary" aria-hidden />
+                Conquistas
+              </CardTitle>
+              <CardDescription>
+                Acompanhe seu progresso e desbloqueie novas marcas.
+              </CardDescription>
+            </div>
+            {onViewAchievements ? (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={onViewAchievements}
+              >
+                Ver todas
+                <ArrowRight className="size-4" aria-hidden />
+              </Button>
+            ) : null}
+          </div>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-3">
+          {achievementTeaser ? (
+            <>
+              <div className="flex items-center justify-between text-xs text-muted-foreground">
+                <span className="font-medium">
+                  {achievementTeaser.unlocked} de {achievementTeaser.total}{' '}
+                  desbloqueadas
+                </span>
+                <span className="tabular-nums font-semibold text-foreground">
+                  {teaserPct}%
+                </span>
+              </div>
+              <Progress value={teaserPct} className="h-2" />
+              {achievementTeaser.recent.length > 0 ? (
+                <div className="mt-1 flex flex-wrap gap-1.5">
+                  {achievementTeaser.recent.slice(0, 5).map((a) => (
+                    <Badge
+                      key={a.id}
+                      variant="outline"
+                      className="gap-1 border-primary/30 bg-primary/10 text-primary"
+                    >
+                      <AchievementIcon name="award" className="size-3" />
+                      {a.name}
+                    </Badge>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  Jogue sua primeira partida para começar a desbloquear
+                  conquistas.
+                </p>
+              )}
+            </>
+          ) : (
+            <Skeleton className="h-12 w-full rounded-md" />
+          )}
+        </CardContent>
+      </Card>
 
       {/* Partidas recentes */}
       <Card>

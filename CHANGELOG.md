@@ -55,6 +55,51 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
 - **Documentação da Fase 1**: `docs/PHASE1.md` (execução),
   `docs/PLAYER-AUTH.md` (guia técnico de auth) e
   `docs/TEST-PLAN-PHASE1.md` (plano de testes da tarefa 1.9).
+- **Ranking global público (Fase 2)** — `GET /api/leaderboard` (top 100)
+  ordenável por vitórias (`metric=wins`) ou pontuação média
+  (`metric=avgScore`), com paginação (`limit`/`offset`) e busca por
+  `username`/`displayName`.
+- **Cache in-memory (TTL 5s)** para consultas de leaderboard — `Map` por
+  processo com chave `metric+limit+offset+search`, hit ratio esperada
+  > 80%. Migração para Redis prevista na Fase 7.
+- **Estatísticas pessoais expandidas** — `GET /api/player/stats`
+  retornando `summary`, `evolution` (últimas 50 partidas com pontuação
+  cumulativa), `distribution` (wins/losses/draws) e `recentForm`
+  (últimas 5).
+- **Sistema de conquistas/badges (8 iniciais em 4 tiers)** — modelos
+  `Achievement` e `PlayerAchievement` (Prisma) com `@@unique([playerId,
+  achievementId])`; catálogo inicial cobre `first_game`, `first_win`,
+  `ten_games`, `five_wins`, `high_score_200`, `high_score_300`, `bingo`
+  e `streak_3` em tiers bronze/silver/gold.
+- **Desbloqueio automático de conquistas** — `checkAndUnlockAchievements`
+  roda após cada `POST /api/player/games/simulate`; conquistas
+  recém-desbloqueadas são persistidas e devolvidas em `newAchievements`
+  no payload.
+- **Notificação de conquista via toast customizado** —
+  `src/components/player/achievement-toast.tsx` (sonner) dispara no
+  `profile-screen` para cada item em `newAchievements`, com ícone lucide
+  e tier colorido.
+- **Índices de performance em `PlayerAccount`** — `@@index([gamesWon])`,
+  `@@index([totalScore])`, `@@index([bestScore])` para acelerar
+  `orderBy` do leaderboard.
+- **Endpoint de benchmark de performance do leaderboard** —
+  `GET /api/ops/phase2/benchmark` executa 10 chamadas e reporta
+  min/avg/max/p95 + `underThreshold` (threshold 200 ms).
+- **Tela de perfil expandida com gráficos** —
+  `src/components/player/expanded-profile.tsx` com gráfico de evolução
+  (linha) e distribuição (barra), reaproveitando `chart.tsx`.
+- **Tab de Conquistas no modo Jogador** —
+  `src/components/player/achievements-panel.tsx` com progresso visual
+  por tier (bronze/silver/gold/platinum) e porcentagem de conclusão.
+- **Navegação interna no modo Jogador** — tabs **Ranking / Meu perfil /
+  Conquistas** no `src/components/player/player-app.tsx`.
+- **Seção "Fase 2" no Console de Operações** —
+  `GET /api/ops/phase2/status` (progresso M2 + 4 critérios de saída) e
+  `GET /api/ops/phase2/benchmark` (latência on-demand).
+- **Documentação da Fase 2**: `docs/PHASE2.md` (execução),
+  `docs/ACHIEVEMENTS.md` (catálogo e guia de conquistas),
+  `docs/PERFORMANCE.md` (guia de performance do leaderboard) e
+  `docs/TEST-PLAN-PHASE2.md` (plano de testes da tarefa 2.9).
 
 ### Changed
 - `.env.example` reescrito com placeholders seguros e instruções de geração
@@ -62,6 +107,11 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
   (`PLAYER_SESSION_TTL_SECONDS`, `GOOGLE_OAUTH_*`, `SMTP_*`).
 - `prisma/schema.prisma` estendido com os models `PlayerAccount`,
   `PasswordResetToken` e `GameRecord`.
+- `prisma/schema.prisma` estendido com os models `Achievement` e
+  `PlayerAchievement` (Fase 2) e índices adicionados em `PlayerAccount`
+  (`gamesWon`, `totalScore`, `bestScore`).
+- `POST /api/player/games/simulate` agora retorna `newAchievements: []`
+  após avaliar `checkAndUnlockAchievements` (Fase 2).
 
 ### Fixed
 - _Nada nesta versão._
